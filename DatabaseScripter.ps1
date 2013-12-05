@@ -1,15 +1,20 @@
+<#
+    Script loops though a sql server instance to script individual database objects into individual sql fies.  
+#>
+#For initial build user local server - will need to change to grab all servers
+$InstanceName = 'SHURAK-DT'
+$DestinationRoot = 'C:\Users\jshurak\Development\DMS\SQL\'
+
 
 #$ErrorActionPreference = 'SilentlyContinue'
 $ModuleName = 'DatabaseScripter'
 $RunDate = get-date -format 'yyyyMMdd'
 
+
+
 #These items should move to a separate file
 [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SqlServer.SMO") | Out-Null
-$DestinationRoot = 'C:\Users\jshurak\Development\DMS\SQL\'
 
-
-#For initial build user local server - will need to change to grab all servers
-$InstanceName = 'SHURAK-DT'
 
 write-host "Processing $InstanceName"
 # new instance object -  Initialize the instance
