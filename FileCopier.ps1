@@ -14,5 +14,9 @@
     #>
 
 process{
-    
+    $Filter = "*.$FileExtension"
+
+    Get-ChildItem -Recurse -Path $Source -Filter $Filter | % {
+        write-output $_.Name        
+    }    
 }
