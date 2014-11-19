@@ -19,6 +19,47 @@
 
         Process
         {
+
+            $ConfigQuery = 
+@"
+set nocount on
+IF OBJECT_ID('tempdb..#configuration') IS NOT NULL
+	DROP TABLE #configuration
+
+create table #configuration
+(
+	entry varchar(256)
+)
+exec sp_configure 'show advanced options',1
+reconfigure
+insert into #configuration
+select 'exec sp_CONFIGURE ''show advanced options'', 1' 
+insert into #configuration
+select 'reconfigure'
+insert into #configuration
+select 'exec sp_configure ''' + name + ''', ' + cast(value_in_use as nvarchar(10))
+	from sys.configurations
+	where name<>'show advanced options'
+insert into #configuration
+select 'exec sp_CONFIGURE ''show advanced options'', 0' 
+insert into #configuration
+select 'reconfigure'
+
+exec sp_configure 'show advanced options',0
+reconfigure
+DECLARE @entry varchar(256)
+while (select count(*) from #configuration)>0
+BEGIN
+	select top 1 @entry = [entry]
+	from #configuration
+
+	PRINT @entry
+
+	DELETE FROM #configuration
+	where [entry] = @entry
+END
+"@
+
             $ErrorActionPreference = "SilentlyContinue"
             [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SqlServer.Smo") | Out-Null
             
@@ -135,6 +176,25 @@
             $SqlConnection.Open()
             $cmd.ExecuteNonQuery() | Out-Null
             $SqlConnection.Close()
+
+            #Script out configuration
+            $ConfigDir = $WorkDir + "\Configuration"
+            $ConfigFile = $ConfigDir + "\Config.sql"
+            if(!(Test-Path $ConfigDir))
+            {
+                New-Item $ConfigDir -ItemType directory
+                New-Item $ConfigFile -ItemType file
+            }
+            $handler = [System.Data.SqlClient.SqlInfoMessageEventHandler] {param($sender, $event) Out-File -Append -filepath $ConfigFile -inputobject $event.Message };
+            $SqlConnection = new-Object System.Data.SqlClient.SqlConnection("Server=$InstanceName;DataBase=$UtilityDatabase;Integrated Security=SSPI")
+            $SqlConnection.add_InfoMessage($handler); 
+            $SqlConnection.FireInfoMessageEventOnUserErrors = $true;
+            $cmd = new-Object System.Data.SqlClient.SqlCommand("$ConfigQuery", $SqlConnection)
+            $cmd.CommandType = [System.Data.CommandType]'Text'
+            $SqlConnection.Open()
+            $cmd.ExecuteNonQuery() | Out-Null
+            $SqlConnection.Close()
+            (Get-Content $ConfigFile | Select-Object -Skip 1) | Set-Content $ConfigFile
         }
 }
 
