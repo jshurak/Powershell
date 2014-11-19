@@ -1,10 +1,20 @@
 ﻿Function script-server
 {
+        <#
+         .SYNOPSIS
+            A function to generate SQL scripts for server level objects.
+         .DESCRIPTION
+            User inputs the Instance name and an optional destination directory.  For scripting logins the sp_help_rev_login stored procedure should exist on the server. A database
+            name can be supplied for the optional $UtilityDatabase parameter for special location. It will default to the Master database.
+         #>
+
+
         param
         (
             [parameter(mandatory=$true)]
             [string]$InstanceName,  
-            [string]$DestinationRoot
+            [string]$DestinationRoot,
+            [string]$UtilityDatabase
         )
 
         Process
@@ -18,6 +28,11 @@
             $ServerName = $InstanceObject.ComputerNamePhysicalNetBIOS
 
             $InstanceRoot = $InstanceName.Replace("\","`$")
+
+            if([string]::IsNullOrEmpty($UtilityDatabase))
+            {
+                $UtilityDatabase = "Master"
+            }
 
 
             if([string]::IsNullOrEmpty($ServerName))
@@ -112,7 +127,7 @@
                 New-Item $LoginsFile -ItemType file
             }
             $handler = [System.Data.SqlClient.SqlInfoMessageEventHandler] {param($sender, $event) Out-File -Append -filepath $LoginsFile -inputobject $event.Message };
-            $SqlConnection = new-Object System.Data.SqlClient.SqlConnection("Server=$InstanceName;DataBase=master;Integrated Security=SSPI")
+            $SqlConnection = new-Object System.Data.SqlClient.SqlConnection("Server=$InstanceName;DataBase=$UtilityDatabase;Integrated Security=SSPI")
             $SqlConnection.add_InfoMessage($handler); 
             $SqlConnection.FireInfoMessageEventOnUserErrors = $true;
             $cmd = new-Object System.Data.SqlClient.SqlCommand("dbo.sp_help_revlogin", $SqlConnection)
