@@ -206,6 +206,8 @@ END
             $cmd.ExecuteNonQuery() | Out-Null
             $SqlConnection.Close()
             (Get-Content $ConfigFile | Select-Object -Skip 2) | Set-Content $ConfigFile
+
+            generate-inventory -InstanceName $InstanceName -DestinationRoot $WorkDir
         }
 }
 
@@ -328,6 +330,23 @@ function generate-inventory($InstanceName,$DestinationRoot)
     Add-Member -InputObject $Instance -MemberType NoteProperty -Name OperatingSystem -Value $os.Caption
     Add-Member -InputObject $Instance -MemberType NoteProperty -Name ServicePack -Value $os.CSDVersion
 
+    Submit-SQLStatement -ServerInstance "PHLDVWSSQL002\DVS1201" -Database "CMS" -ModuleName "generate-inventory" -Query "exec ReportServerIOPS @Show_Max_Transfers = 1, @ServerName = '$InstanceName'" | % {
+        $CollectionDate = $_.CollectionDate
+        $MaxTransfers = $_."Transfers\Sec"
+        $Reads = $_."Reads\Sec"
+        $Writes = $_."Writes\Sec"
+
+
+    }
+        if($CollectionDate -eq $null){$CollectionDate = "NA"}
+        if($MaxTransfers -eq $null){$MaxTransfers = "NA"}
+        if($Reads -eq $null){$Reads = "NA"}
+        if($Write -eq $null){$Writes = "NA"}
+
+    Add-Member -InputObject $Instance -MemberType NoteProperty -Name MaxTransfers -Value $MaxTransfers
+    Add-Member -InputObject $Instance -MemberType NoteProperty -Name MaxTransfersDate -Value $CollectionDate
+    Add-Member -InputObject $Instance -MemberType NoteProperty -Name Reads -Value $Reads
+    Add-Member -InputObject $Instance -MemberType NoteProperty -Name Writes -Value $Writes
     
     #server information
     $Name = $Instance.InstanceName
@@ -337,6 +356,10 @@ function generate-inventory($InstanceName,$DestinationRoot)
     $Memory = [system.math]::Round($Instance.PhysicalMemory/1024) 
     $Memory = "$Memory`GB"
     $Cores = $Instance.Processors
+    $MaxTransfersDate = $Instance.MaxTransfersDate
+    $MaxIO = $Instance.MaxTransfers
+    $ReadsIO = $Instance.Reads
+    $WritesIO = $Instance.Writes
 
     #instance information
     switch -Wildcard ($Instance.VersionMajor.ToString()+"."+($Instance.VersionMinor).ToString())
@@ -402,6 +425,22 @@ $html =
             <tr>
                 <th>Processor Core Count:</th>
                     <td>$Cores</td>
+            </tr>
+            <tr>
+                <th>Max Transfers Date</th>
+                    <td>$MaxTransfersDate</td>
+            </tr>
+            <tr>
+                <th>Max IO</th>
+                    <td>$MaxIO</td>
+            </tr>
+            <tr>    
+                <th>Reads</th>
+                    <td>$ReadsIO</td>
+            </tr>
+            <tr>    
+                <th>Writes</th>
+                    <td>$WritesIO</td>
             </tr>
         </table>
         <p>
@@ -479,6 +518,26 @@ foreach($agentjob in $Instance.JobServer.Jobs | Where-Object {$_.IsEnabled -eq $
 $html = $html + $AgentDataRows + 
 @"
 
+        </table>
+        <p>
+        <h4>Databases</h4>
+        <table>
+            <tr>
+                <th>Name</th>
+                <th>Recovery Model</th>
+                <th>Size in MB</th>
+            </tr>
+"@
+$DatabaseRows = ""
+foreach($db in $Instance.Databases | Where-Object {$_.IsSystemObject -eq $false})
+{
+    $DatabaseName = $db.Name
+    $RecoveryModel = $db.RecoveryModel
+    $Size = $db.Size
+    $DatabaseRows = $DatabaseRows + "<tr><td>$DatabaseName</td><td>$RecoveryModel</td><td>$Size</td></tr>"
+}
+$html = $html + $DatabaseRows + 
+@"
         </table>
     </body>
 </html>
