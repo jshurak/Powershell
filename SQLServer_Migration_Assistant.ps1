@@ -358,10 +358,12 @@ function create-instanceobject
     Add-Member -InputObject $Instance -MemberType NoteProperty -Name InstanceName -Value $InstanceName
 
     $os = Get-WmiObject Win32_operatingsystem -ComputerName $Instance.ServerName
+    $mem = Get-WmiObject Win32_ComputerSystem -ComputerName $Instance.ServerName
+    $TotalMemory = [system.math]::Round($mem.TotalPhysicalMemory/1024/1024/1024)
 
     Add-Member -InputObject $Instance -MemberType NoteProperty -Name OperatingSystem -Value $os.Caption
     Add-Member -InputObject $Instance -MemberType NoteProperty -Name ServicePack -Value $os.CSDVersion
-    
+    Add-Member -InputObject $Instance -MemberType NoteProperty -Name PhysicalMemory  -Value "$TotalMemory`GB"
 
     $Instance
 }
