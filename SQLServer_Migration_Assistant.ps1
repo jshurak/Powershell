@@ -28,6 +28,7 @@ IF OBJECT_ID('tempdb..#configuration') IS NOT NULL
 
 create table #configuration
 (
+	[id] int identity(1,1),
 	entry varchar(256)
 )
 exec sp_configure 'show advanced options',1
@@ -47,16 +48,18 @@ select 'reconfigure'
 
 exec sp_configure 'show advanced options',0
 reconfigure
-DECLARE @entry varchar(256)
+DECLARE @entry varchar(256),@id int
 while (select count(*) from #configuration)>0
 BEGIN
-	select top 1 @entry = [entry]
+	select top 1 
+		@id	= [id],
+		@entry = [entry]
 	from #configuration
 
 	PRINT @entry
 
 	DELETE FROM #configuration
-	where [entry] = @entry
+	where [id] = @id
 END
 "@
 
@@ -165,6 +168,10 @@ END
             if(!(Test-Path $LoginsDir))
             {
                 New-Item $LoginsDir -ItemType directory
+            }
+            if(Test-Path $LoginsFile)
+            {
+                rm $LoginsFile
                 New-Item $LoginsFile -ItemType file
             }
             $handler = [System.Data.SqlClient.SqlInfoMessageEventHandler] {param($sender, $event) Out-File -Append -filepath $LoginsFile -inputobject $event.Message };
@@ -183,6 +190,10 @@ END
             if(!(Test-Path $ConfigDir))
             {
                 New-Item $ConfigDir -ItemType directory
+            }
+            if(Test-Path $ConfigFile)
+            {
+                rm $ConfigFile
                 New-Item $ConfigFile -ItemType file
             }
             $handler = [System.Data.SqlClient.SqlInfoMessageEventHandler] {param($sender, $event) Out-File -Append -filepath $ConfigFile -inputobject $event.Message };
@@ -194,7 +205,7 @@ END
             $SqlConnection.Open()
             $cmd.ExecuteNonQuery() | Out-Null
             $SqlConnection.Close()
-            (Get-Content $ConfigFile | Select-Object -Skip 1) | Set-Content $ConfigFile
+            (Get-Content $ConfigFile | Select-Object -Skip 2) | Set-Content $ConfigFile
         }
 }
 
@@ -305,4 +316,52 @@ function Submit-SQLStatement
             log-message $ModuleName $message
         }  
     }
+}
+
+function generate-inventory 
+{
+        param
+        (
+            [parameter(mandatory=$true)]
+            [string]$InstanceName,  
+            [string]$DestinationRoot
+        )
+    
+$html = 
+@"
+<html>
+    <head>
+            $InstanceName Inventory Sheet
+    </head>
+    <body>
+    </body>
+</html>
+"@
+        $InstanceRoot = $InstanceName.Replace("\","`$")
+
+        $File = "$DestinationRoot\$InstanceRoot`_Inventory.html"
+
+        Set-Content -Path $File -Value $html
+
+}
+
+function create-instanceobject
+{
+    param
+    (
+        [parameter(mandatory=$true)]
+        [string]$InstanceName
+    )
+
+    $Instance = New-Object -TypeName PSObject
+    Add-Member -InputObject $Instance -MemberType NoteProperty -Name ServerName -Value $InstanceName.Substring(0,$InstanceName.IndexOf("\"))
+    Add-Member -InputObject $Instance -MemberType NoteProperty -Name InstanceName -Value $InstanceName
+
+    $os = Get-WmiObject Win32_operatingsystem -ComputerName $Instance.ServerName
+
+    Add-Member -InputObject $Instance -MemberType NoteProperty -Name OperatingSystem -Value $os.Caption
+    Add-Member -InputObject $Instance -MemberType NoteProperty -Name ServicePack -Value $os.CSDVersion
+    
+
+    $Instance
 }
