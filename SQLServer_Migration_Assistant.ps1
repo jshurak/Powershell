@@ -5,7 +5,7 @@
             A function to generate SQL scripts for server level objects.
          .DESCRIPTION
             User inputs the Instance name and an optional destination directory.  For scripting logins the sp_help_rev_login stored procedure should exist on the server. A database
-            name can be supplied for the optional $UtilityDatabase parameter for special location. It will default to the Master database.
+            name can be supplied for the optional $UtilityDatabase parameter for special location. It will default to the Master database. It then calls the generate-inventory function to create an html inventory sheet.
          #>
 
 
@@ -164,7 +164,7 @@ END
 
             #Script out Logins
             $LoginsDir = $WorkDir + "\Logins"
-            $LoginsFile = $LoginsDir + "\Logins.sql"
+            $LoginsFile = $LoginsDir + "\__All_Logins.sql"
             if(!(Test-Path $LoginsDir))
             {
                 New-Item $LoginsDir -ItemType directory
@@ -186,7 +186,7 @@ END
 
             #Script out configuration
             $ConfigDir = $WorkDir + "\Configuration"
-            $ConfigFile = $ConfigDir + "\Config.sql"
+            $ConfigFile = $ConfigDir + "\__All_Config.sql"
             if(!(Test-Path $ConfigDir))
             {
                 New-Item $ConfigDir -ItemType directory
@@ -207,8 +207,46 @@ END
             $SqlConnection.Close()
             (Get-Content $ConfigFile | Select-Object -Skip 2) | Set-Content $ConfigFile
 
+            consolidate-all -InstanceName $InstanceName -DestinationRoot $WorkDir
             generate-inventory -InstanceName $InstanceName -DestinationRoot $WorkDir
         }
+}
+
+Function consolidate-all
+{
+        <#
+        .SYNOPSIS
+            Consolidate all the things!
+        .DESCRIPTION
+            Trolls through the provided directory and consolidates all the consolidated files into one script.
+        #>
+        param
+        (
+            [parameter(mandatory=$true)] $InstanceName,
+            [parameter(mandatory=$true)] $DestinationRoot
+        )
+
+        process
+        {
+            $InstanceName = $InstanceName.Replace("\","`$")
+            $File = "$DestinationRoot`\$InstanceName`_Deployment_Script.sql"
+
+            if(!(Test-Path $DestinationRoot))
+            {
+                write-output "$DestinationRoot not found. Exiting script."
+                return
+            }
+            if(!(Test-Path $File))
+            {
+                New-Item -Path "$File" -ItemType file
+            }
+
+            Get-ChildItem -Path $DestinationRoot -Recurse | Where-Object {$_.Name -like "__All*"} | % {
+                $CurrentFile = $_.FullName
+                get-content $CurrentFile | Add-Content $File
+            }
+        }
+            
 }
 
 
@@ -322,6 +360,12 @@ function Submit-SQLStatement
 
 function generate-inventory($InstanceName,$DestinationRoot) 
 {
+    <#
+        .SYNOPSIS
+        A function to generate an inventory sheet for a SQL Server instance
+        .DESCRIPTION
+        Accepts InstanceName and Destination directory.  Function creates a Server smo object and pulls various properties.  
+     #>
 
     [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SqlServer.Smo") | Out-Null
     $Instance = New-Object('Microsoft.SqlServer.Management.Smo.Server') $InstanceName
@@ -332,16 +376,16 @@ function generate-inventory($InstanceName,$DestinationRoot)
 
     Submit-SQLStatement -ServerInstance "PHLDVWSSQL002\DVS1201" -Database "CMS" -ModuleName "generate-inventory" -Query "exec ReportServerIOPS @Show_Max_Transfers = 1, @ServerName = '$InstanceName'" | % {
         $CollectionDate = $_.CollectionDate
-        $MaxTransfers = $_."Transfers\Sec"
-        $Reads = $_."Reads\Sec"
-        $Writes = $_."Writes\Sec"
+        $MaxTransfers = [system.math]::Round($_."Transfers\Sec",2)
+        $Reads = [system.math]::Round($_."Reads\Sec",2)
+        $Writes = [system.math]::Round($_."Writes\Sec",2)
 
 
     }
         if($CollectionDate -eq $null){$CollectionDate = "NA"}
         if($MaxTransfers -eq $null){$MaxTransfers = "NA"}
         if($Reads -eq $null){$Reads = "NA"}
-        if($Write -eq $null){$Writes = "NA"}
+        if($Writes -eq $null){$Writes = "NA"}
 
     Add-Member -InputObject $Instance -MemberType NoteProperty -Name MaxTransfers -Value $MaxTransfers
     Add-Member -InputObject $Instance -MemberType NoteProperty -Name MaxTransfersDate -Value $CollectionDate
