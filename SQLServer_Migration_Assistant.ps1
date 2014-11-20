@@ -6,6 +6,15 @@
          .DESCRIPTION
             User inputs the Instance name and an optional destination directory.  For scripting logins the sp_help_rev_login stored procedure should exist on the server. A database
             name can be supplied for the optional $UtilityDatabase parameter for special location. It will default to the Master database. It then calls the generate-inventory function to create an html inventory sheet.
+         .EXAMPLE
+            script-server -InstanceName "PHLDVWSSQL002\DVS1201"
+            This example shows the basic usage.  It will script out the provided instances into the directory local to the powershell session.
+
+            script-server -InstanceName "PHLDVWSSQL002\DVS1201" -DestinationRoot "\\kmhpemcfspa21\ISTSG\TSG\nsg\Database_Unix_SA\Database Administration Team\MSSQL Admin\Virtualization Effort\ServerScripts"
+            This example scripts out the provided instance to the network drive provided.
+           
+            script-server -InstanceName "PHLDVWSSQL002\DVS1201" -DestinationRoot "c:\ServerScripts" -UtilityDatabase "Data_Collection"
+            This example scripts the provided instance to the specified directory, using the data_collection database as the sp_rev_help_login location. 
          #>
 
 
