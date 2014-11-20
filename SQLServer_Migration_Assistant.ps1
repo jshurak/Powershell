@@ -318,22 +318,168 @@ function Submit-SQLStatement
     }
 }
 
-function generate-inventory 
+function generate-inventory($InstanceName,$DestinationRoot) 
 {
-        param
-        (
-            [parameter(mandatory=$true)]
-            [string]$InstanceName,  
-            [string]$DestinationRoot
-        )
+
+    [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SqlServer.Smo") | Out-Null
+    $Instance = New-Object('Microsoft.SqlServer.Management.Smo.Server') $InstanceName
+
+    $os = Get-WmiObject Win32_operatingsystem -ComputerName $Instance.ComputerNamePhysicalNetBIOS
+    Add-Member -InputObject $Instance -MemberType NoteProperty -Name OperatingSystem -Value $os.Caption
+    Add-Member -InputObject $Instance -MemberType NoteProperty -Name ServicePack -Value $os.CSDVersion
+
     
+    #server information
+    $Name = $Instance.InstanceName
+    $ServerName = $Instance.ComputerNamePhysicalNetBIOS
+    $OS = $Instance.OperatingSystem
+    $OSSP = $Instance.ServicePack
+    $Memory = [system.math]::Round($Instance.PhysicalMemory/1024) 
+    $Memory = "$Memory`GB"
+    $Cores = $Instance.Processors
+
+    #instance information
+    switch -Wildcard ($Instance.VersionMajor.ToString()+"."+($Instance.VersionMinor).ToString())
+        {
+            "11*"   {$SQLVersion = "2012"}
+            "10.5*" {$SQLVersion = "2008 R2"}
+            "10.0*" {$SQLVersion = "2008"}
+            "9.0*" {$SQLVersion = "2005"}
+        }
+    $SQLEdition = $Instance.Edition
+    $SQLServicePack = $Instance.Information.ProductLevel
+    $SQLMaxMemory = [system.math]::Round($Instance.Configuration.MaxServerMemory.RunValue/1024)
+    $SQLMaxMemory = "$SQLMaxMemory`GB"
+    $AgentJobCount = ($Instance.JobServer.Jobs | Where-Object {$_.IsEnabled -eq $true}).Count
+    $LinkedServerCount = $Instance.LinkedServers.Count
+    $DatabaseCount = $Instance.Databases.Count
+    $LoginsCount = $Instance.Logins.Count
+
+
 $html = 
 @"
 <html>
     <head>
-            $InstanceName Inventory Sheet
+    <style>
+    body {
+        
+    }
+    h1 {
+        color: Black;
+        
+    }
+    table{
+        border: 1px solid black;
+        text-align: left;
+    }
+    th, td, tr {
+        border: 1px #ADD8E6;
+    }
+
+    </style>
+            <h1>$InstanceName Inventory Sheet</h1>
     </head>
     <body>
+        <p>
+        <h3>Server Information</h3>
+        <table >
+            <tr>
+                <th>ServerName:</th>
+                    <td>$ServerName</td>
+            </tr>
+            <tr>
+                <th>Operating System:</th>
+                    <td>$OS</td>
+            </tr>
+            <tr>
+                <th>Operating System Service Pack:</th>
+                    <td>$OSSP</td>
+            </tr>
+            <tr>
+                <th>Server Memory:</th>
+                    <td>$Memory</td>
+            </tr>
+            <tr>
+                <th>Processor Core Count:</th>
+                    <td>$Cores</td>
+            </tr>
+        </table>
+        <p>
+        <h3>SQL Instance Information</h3>
+        <table>
+            <tr>
+                <th>SQL Version:</th>
+                    <td>$SQLVersion</td>
+            </tr>
+            <tr>
+                <th>SQL Edition:</th>
+                    <td>$SQLEdition</td>
+            </tr>
+            <tr>
+                <th>Service Pack:</th>
+                    <td>$SQLServicePack</td>
+            </tr>
+            <tr>
+                <th>Max Memory Setting:</th>
+                    <td>$SQLMaxMemory</td>
+            </tr>
+            <tr>
+                <th>Database Count:</th>
+                    <td>$DatabaseCount</td>
+            </tr>
+            <tr>
+                <th>Agent Job Count:</th>
+                    <td>$AgentJobCount</td>
+            </tr>
+            <tr>
+                <th>Linked Server Count:</th>
+                    <td>$LinkedServerCount</td>
+            </tr>
+            <tr>
+                <th>Logins Count:</th>
+                    <td>$LoginsCount</td>
+            </tr>
+        </table>
+        <p>
+        <h3>Detailed Server Objects</h3>
+        <h4>Linked Servers</h4>
+        <table>
+            <tr>
+                <th>Name</th>
+                <th>Type</th>
+            </tr>
+"@
+$LinkedDataRows =""
+foreach($linkedServer in $Instance.LinkedServers)
+{
+    $LinkedServerName = $linkedserver.Name
+    $LinkedServerType = $linkedserver.ProductName
+    $LinkedDataRows = $LinkedDataRows + "<tr><td>$LinkedServerName</td><td>$LinkedServerType</td></tr>"
+}
+
+$html = $html + $LinkedDatarows + 
+@"
+
+        </table>
+        <h4>SQL Agent Jobs</h4>
+        <table>
+            <tr>
+                <th>Name</th>
+                <th>Category</th>
+            </tr>
+"@
+$AgentDataRows = ""
+foreach($agentjob in $Instance.JobServer.Jobs | Where-Object {$_.IsEnabled -eq $true})
+{
+    $JobName = $agentjob.name
+    $JobCategory = $agentjob.Category
+    $AgentDataRows = $AgentDataRows + "<tr><td>$JobName</td><td>$JobCategory</td></tr>"
+}
+
+$html = $html + $AgentDataRows + 
+@"
+
+        </table>
     </body>
 </html>
 "@
@@ -365,5 +511,7 @@ function create-instanceobject
     Add-Member -InputObject $Instance -MemberType NoteProperty -Name ServicePack -Value $os.CSDVersion
     Add-Member -InputObject $Instance -MemberType NoteProperty -Name PhysicalMemory  -Value "$TotalMemory`GB"
 
-    $Instance
+    Submit-SQLStatement -ServerInstance $InstanceName -Database "master" -ModuleName "create-instanceobject" -query ""
+
+    return $Instance
 }
