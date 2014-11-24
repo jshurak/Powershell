@@ -549,7 +549,7 @@ $html =
             </tr>
         </table>
         <p>
-        <h3>Detailed Server Objects</h3>
+        <h2>Server Level Objects</h2>
         <table>
             <tr>
                 <th id="firstrow" colspan="2">Linked Servers</th>
