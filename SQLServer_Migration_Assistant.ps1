@@ -438,18 +438,30 @@ $html =
     <head>
     <style>
     body {
-        
+        background:#FFFFFF;
     }
     h1 {
-        color: Black;
+        color: #000000;
+        font-family: "Trebuchet MS", Helvetica, sans-serif;
         
     }
     table{
         border: 1px solid black;
+        border-collapse: collapse;
         text-align: left;
+        font-family: "Trebuchet MS", Helvetica, sans-serif;
     }
-    th, td, tr {
-        border: 1px #ADD8E6;
+
+    
+    td, tr th {
+        border: 1px solid;
+        border-width: 1px;
+        border-color: #7DCFC6;
+        background: #FAFCFA;
+        font-family: "Trebuchet MS", Helvetica, sans-serif;
+    }
+    #firstrow{
+        background-color:#C1F6B9;
     }
 
     </style>
@@ -457,8 +469,10 @@ $html =
     </head>
     <body>
         <p>
-        <h3>Server Information</h3>
-        <table >
+        <table>
+            <tr>
+                <th id="firstrow" colspan="2">Server Information</th>
+            </tr>           
             <tr>
                 <th>ServerName:</th>
                     <td>$ServerName</td>
@@ -497,8 +511,10 @@ $html =
             </tr>
         </table>
         <p>
-        <h3>SQL Instance Information</h3>
         <table>
+            <tr>
+                <th id="firstrow" colspan="2">SQL Instance Information</th>
+            </tr>
             <tr>
                 <th>SQL Version:</th>
                     <td>$SQLVersion</td>
@@ -534,8 +550,10 @@ $html =
         </table>
         <p>
         <h3>Detailed Server Objects</h3>
-        <h4>Linked Servers</h4>
         <table>
+            <tr>
+                <th id="firstrow" colspan="2">Linked Servers</th>
+            <tr>
             <tr>
                 <th>Name</th>
                 <th>Type</th>
@@ -553,8 +571,11 @@ $html = $html + $LinkedDatarows +
 @"
 
         </table>
-        <h4>SQL Agent Jobs</h4>
+        <p>
         <table>
+            <tr>
+                <th id="firstrow" colspan="2">SQL Agent Jobs</th>
+            <tr>
             <tr>
                 <th>Name</th>
                 <th>Category</th>
@@ -573,8 +594,10 @@ $html = $html + $AgentDataRows +
 
         </table>
         <p>
-        <h4>Databases</h4>
         <table>
+            <tr>
+                <th id="firstrow" colspan="3">Databases</th>
+            <tr>
             <tr>
                 <th>Name</th>
                 <th>Recovery Model</th>
