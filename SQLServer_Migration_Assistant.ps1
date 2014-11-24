@@ -51,8 +51,6 @@ select 'exec sp_configure ''' + name + ''', ' + cast(value_in_use as nvarchar(10
 	from sys.configurations
 	where name<>'show advanced options'
 insert into #configuration
-select 'exec sp_CONFIGURE ''show advanced options'', 0' 
-insert into #configuration
 select 'reconfigure'
 
 exec sp_configure 'show advanced options',1
@@ -380,9 +378,19 @@ function generate-inventory($InstanceName,$DestinationRoot)
     [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SqlServer.Smo") | Out-Null
     $Instance = New-Object('Microsoft.SqlServer.Management.Smo.Server') $InstanceName
 
-    $os = Get-WmiObject Win32_operatingsystem -ComputerName $Instance.ComputerNamePhysicalNetBIOS
-    Add-Member -InputObject $Instance -MemberType NoteProperty -Name OperatingSystem -Value $os.Caption
-    Add-Member -InputObject $Instance -MemberType NoteProperty -Name ServicePack -Value $os.CSDVersion
+    try
+    {
+        $os = Get-WmiObject Win32_operatingsystem -ComputerName $Instance.ComputerNamePhysicalNetBIOS
+        Add-Member -InputObject $Instance -MemberType NoteProperty -Name OperatingSystem -Value $os.Caption
+        Add-Member -InputObject $Instance -MemberType NoteProperty -Name ServicePack -Value $os.CSDVersion
+    }
+    catch [System.OutOfMemoryException]
+    {
+        Add-Member -InputObject $Instance -MemberType NoteProperty -Name OperatingSystem -Value "NA"
+        Add-Member -InputObject $Instance -MemberType NoteProperty -Name ServicePack -Value "NA"
+    }
+        
+
 
     Submit-SQLStatement -ServerInstance "PHLDVWSSQL002\DVS1201" -Database "CMS" -ModuleName "generate-inventory" -Query "exec ReportServerIOPS @Show_Max_Transfers = 1, @ServerName = '$InstanceName'" | % {
         $CollectionDate = $_.CollectionDate
