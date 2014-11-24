@@ -291,6 +291,7 @@ function script-object {
                 New-Item $Dir -ItemType directory 
             }
             $Name = $_.name -replace '\\',"`$"
+            $Name = $_.name -replace ':',"`$"
             $File = "$Dir" + "\" + $Name + ".sql"
             if(!(Test-Path $File)){
                 $Scriptor.Options.FileName = $File
