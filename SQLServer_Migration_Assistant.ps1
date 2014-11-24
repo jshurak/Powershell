@@ -55,7 +55,7 @@ select 'exec sp_CONFIGURE ''show advanced options'', 0'
 insert into #configuration
 select 'reconfigure'
 
-exec sp_configure 'show advanced options',0
+exec sp_configure 'show advanced options',1
 reconfigure
 DECLARE @entry varchar(256),@id int
 while (select count(*) from #configuration)>0
