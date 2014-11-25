@@ -290,6 +290,7 @@ function script-object {
             }
             $Name = $_.name -replace '\\',"`$"
             $Name = $Name -replace ':',"`_"
+            $Name = $Name -replace '/',"`_"
             $File = "$Dir" + "\" + $Name + ".sql"
             if(!(Test-Path $File)){
                 $Scriptor.Options.FileName = $File
