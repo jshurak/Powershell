@@ -1,4 +1,13 @@
-﻿Function script-server
+﻿            $DriveQuery = 
+@"
+select MountPoint,TotalCapacity/1024/1024/1024 as SizeInGB
+from monitoredDrives md INNER JOIN MonitoredServers ms on md.ServerID = ms.ServerID
+WHERE servername = '{0}'
+and md.deleted = 0
+order by MountPoint
+"@
+
+Function script-server
 {
         <#
          .SYNOPSIS
@@ -23,13 +32,16 @@
             [parameter(mandatory=$true)]
             [string]$InstanceName,  
             [string]$DestinationRoot,
-            [string]$UtilityDatabase
+            [string]$UtilityDatabase,
+            [string]$Environment
         )
 
         Process
         {
 
-            $ConfigQuery = 
+        $ErrorActionPreference = "SilentlyContinue"
+        $ConfigQuery = ""
+        $ConfigQuery = 
 @"
 set nocount on
 IF OBJECT_ID('tempdb..#configuration') IS NOT NULL
@@ -70,7 +82,7 @@ BEGIN
 END
 "@
 
-            $ErrorActionPreference = "SilentlyContinue"
+            
             [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SqlServer.Smo") | Out-Null
             
 
@@ -84,7 +96,10 @@ END
             {
                 $UtilityDatabase = "Master"
             }
-
+            if([string]::IsNullOrEmpty($Environment))
+            {
+                $Environment = "PRODUCTION"
+            }
 
             if([string]::IsNullOrEmpty($ServerName))
             {
@@ -215,7 +230,7 @@ END
             (Get-Content $ConfigFile | Select-Object -Skip 2) | Set-Content $ConfigFile
 
             consolidate-all -InstanceName $InstanceName -DestinationRoot $WorkDir
-            generate-inventory -InstanceName $InstanceName -DestinationRoot $WorkDir
+            generate-inventory -InstanceName $InstanceName -DestinationRoot $WorkDir -Environment $Environment
         }
 }
 
@@ -243,10 +258,16 @@ Function consolidate-all
                 write-output "$DestinationRoot not found. Exiting script."
                 return
             }
+            if(Test-Path $File)
+            {
+                Remove-Item -Path "$File" 
+                New-Item -Path "$File" -ItemType file
+            }
             if(!(Test-Path $File))
             {
                 New-Item -Path "$File" -ItemType file
             }
+
 
             Get-ChildItem -Path $DestinationRoot -Recurse | Where-Object {$_.Name -like "__All*"} | % {
                 $CurrentFile = $_.FullName
@@ -336,10 +357,9 @@ function Submit-SQLStatement
     }
     catch
     {
-        $message = $_.Exception.Message
+        $Message = $_.Exception.Message
         $Message = "$Message : $ServerInstance : $Database : $Query"
-        #$message | out-file -append -filepath 
-        log-message $ModuleName $message
+        $Message
         $con = 0
     }
 
@@ -359,15 +379,15 @@ function Submit-SQLStatement
         }
         Catch
         {
-            $message = $_.Exception.Message
+            $Message = $_.Exception.Message
             $Message = "$Message : $ServerInstance : $Database : $Query"
             #$message | out-file -append -filepath 
-            log-message $ModuleName $message
+            $Message
         }  
     }
 }
 
-function generate-inventory($InstanceName,$DestinationRoot) 
+function generate-inventory($InstanceName,$DestinationRoot,$Environment) 
 {
     <#
         .SYNOPSIS
@@ -376,24 +396,33 @@ function generate-inventory($InstanceName,$DestinationRoot)
         Accepts InstanceName and Destination directory.  Function creates a Server smo object and pulls various properties.  
      #>
 
+
+
+ 
     [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SqlServer.Smo") | Out-Null
+    [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SqlServer.SqlWmiManagement") | Out-Null
     $Instance = New-Object('Microsoft.SqlServer.Management.Smo.Server') $InstanceName
+    $Server = $Instance.ComputerNamePhysicalNetBIOS
 
     try
     {
+        $PingResult = get-wmiobject win32_pingStatus -f "address = '$Server'"
+        $IPAddress = $PingResult.IPV4Address.IPAddressToString
         $os = Get-WmiObject Win32_operatingsystem -ComputerName $Instance.ComputerNamePhysicalNetBIOS
         Add-Member -InputObject $Instance -MemberType NoteProperty -Name OperatingSystem -Value $os.Caption
         Add-Member -InputObject $Instance -MemberType NoteProperty -Name ServicePack -Value $os.CSDVersion
+        Add-Member -InputObject $Instance -MemberType NoteProperty -Name IPAddress -Value "$IPAddress"
     }
     catch [System.OutOfMemoryException]
     {
         Add-Member -InputObject $Instance -MemberType NoteProperty -Name OperatingSystem -Value "NA"
         Add-Member -InputObject $Instance -MemberType NoteProperty -Name ServicePack -Value "NA"
+        Add-Member -InputObject $Instance -MemberType NoteProperty -Name IPAddress -Value "NA"
     }
         
 
 
-    Submit-SQLStatement -ServerInstance "PHLDVWSSQL002\DVS1201" -Database "CMS" -ModuleName "generate-inventory" -Query "exec ReportServerIOPS @Show_Max_Transfers = 1, @ServerName = '$InstanceName'" | % {
+    Submit-SQLStatement -ServerInstance "PHLDVWSSQL002\DVS1201" -Database "CMS" -ModuleName "generate-inventory" -Query "exec ReportServerIOPS @Show_Max_Transfers = 1, @ServerName = '$Servername'" | % {
         $CollectionDate = $_.CollectionDate
         $MaxTransfers = [system.math]::Round($_."Transfers\Sec",2)
         $Reads = [system.math]::Round($_."Reads\Sec",2)
@@ -436,10 +465,84 @@ function generate-inventory($InstanceName,$DestinationRoot)
     $SQLServicePack = $Instance.Information.ProductLevel
     $SQLMaxMemory = [system.math]::Round($Instance.Configuration.MaxServerMemory.RunValue/1024)
     $SQLMaxMemory = "$SQLMaxMemory`GB"
+    $ServiceAccount = $Instance.ServiceAccount
     $AgentJobCount = ($Instance.JobServer.Jobs | Where-Object {$_.IsEnabled -eq $true}).Count
     $LinkedServerCount = $Instance.LinkedServers.Count
     $DatabaseCount = $Instance.Databases.Count
     $LoginsCount = $Instance.Logins.Count
+
+    #SSRS/SSAS existence
+    $SSAS = $false
+    $SSRS = $false
+
+    if($InstanceName.Contains("\")){
+       $Stub = $InstanceName.Substring($InstanceName.IndexOf('\')+1)
+       $AgentService = "SQLAgent`$$Stub"
+       $SSASService = "MSOLAP`$$Stub"
+       $SSRSService = "ReportServer`$$Stub"
+    }else{
+       $AgentService = 'SQLSERVERAGENT'
+       $SSASService = 'MSSQLServerOLAPService'
+       $SSRSService = 'ReportServer'
+    }
+
+
+    if(Get-Service -ComputerName $Server -Name $SSASService)
+    {
+        $SSAS = $true
+    }
+    if(Get-Service -ComputerName $Server -Name $SSRSService)
+    {
+        $SSRS = $true
+    }
+    
+
+    $MountHash = @{}
+    Submit-SQLStatement -ServerInstance "PHLDVWSSQL002\DVS1201" -Database "CMS" -ModuleName "Drive" -Query ($DriveQuery -f $ServerName) | % {
+        $MountHash.Add($_.MountPoint,$_.SizeInGB)
+            
+    }
+    
+    if($InstanceName.IndexOf('\') -gt 0)
+    {
+        $InstanceStub = $InstanceName.Substring($InstanceName.IndexOf('\')+1)
+        $ServerName = $InstanceName.Substring(0,$InstanceName.IndexOf('\'))
+    }
+    else
+    {
+        $InstanceStub = 'MSSQLSERVER'
+        $ServerName = $InstanceName
+    }
+
+    
+    $wmi = new-object "Microsoft.SqlServer.Management.Smo.Wmi.ManagedComputer" "$ServerName" -ErrorAction 'Stop'
+    try
+    {
+        $Port=$wmi.ServerInstances["$InstanceStub"].ServerProtocols["Tcp"].IPAddresses["IPAll"].IPAddressProperties["TcpPort"].Value
+        if(!$Port)
+        {
+            $Port=$wmi.ServerInstances["$InstanceStub"].ServerProtocols["Tcp"].IPAddresses["IPAll"].IPAddressProperties["TcpDynamicPorts"].Value
+            if(!$Port)
+            {
+                $Port="Not Found"
+            }
+            else
+            {
+                $Port = $Port + ", Dynamic"
+            }
+        }
+    }
+    catch
+    {
+        Submit-SQLStatement $InstanceName 'master' $ModuleName "select local_tcp_port as Port from sys.dm_exec_connections where session_id = @@SPID" | % {
+                $Port = $_.Port
+                $PortType='UNKNOWN'
+        }
+    }
+    
+    
+
+
 
 
 $html = 
@@ -496,6 +599,10 @@ $html =
                     <td>$OSSP</td>
             </tr>
             <tr>
+                <th>IPAddress:</th>
+                    <td>$IPAddress</td>
+            </tr>
+            <tr>
                 <th>Server Memory:</th>
                     <td>$Memory</td>
             </tr>
@@ -523,7 +630,32 @@ $html =
         <p>
         <table>
             <tr>
+                <th id="firstrow" colspan="2">Server Drive Information</th>
+            </tr>
+            <tr>
+                <th>Mount Point</th>
+                <th>Size in GB</th>
+            </tr>
+"@
+$MountPointRows = ""
+$MountHash.Keys | % {
+    $Point = $_
+    $PointSize = $MountHash.Item($_)
+
+    $MountPointRows = $MountPointRows + "<tr><td>$Point</td><td>$PointSize</td></tr>"
+}
+
+$html = $html + $MountPointRows + 
+@"
+       </table>
+        <p>
+        <table>
+            <tr>
                 <th id="firstrow" colspan="2">SQL Instance Information</th>
+            </tr>
+            <tr>
+                <th>Environment:</th>
+                    <td>$Environment</td>
             </tr>
             <tr>
                 <th>SQL Version:</th>
@@ -536,6 +668,14 @@ $html =
             <tr>
                 <th>Service Pack:</th>
                     <td>$SQLServicePack</td>
+            </tr>
+            <tr>
+                <th>Port:</th>
+                    <td>$Port</td>
+            </tr>
+            <tr>
+                <th>Service Account:</th>
+                    <td>$ServiceAccount</td>
             </tr>
             <tr>
                 <th>Max Memory Setting:</th>
@@ -556,6 +696,14 @@ $html =
             <tr>
                 <th>Logins Count:</th>
                     <td>$LoginsCount</td>
+            </tr>
+            <tr>
+                <th>Analysis Services:</th>
+                    <td>$SSAS</td>
+            </tr>
+                        <tr>
+                <th>Reporting Services:</th>
+                    <td>$SSRS</td>
             </tr>
         </table>
         <p>
