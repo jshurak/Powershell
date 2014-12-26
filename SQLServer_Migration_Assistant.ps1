@@ -286,6 +286,10 @@ Function Consolidate-Files($type,$dir) {
     if(!(Test-Path -Path $ConDir)){
             New-Item $ConDir -ItemType file
     }
+    else{
+        Remove-Item $ConDir 
+        New-Item $ConDir -ItemType file
+    }
     
     Get-ChildItem $dir | where-object -FilterScript {$_.Name -ne $ConFile} |
     ForEach-Object {
@@ -470,6 +474,28 @@ function generate-inventory($InstanceName,$DestinationRoot,$Environment)
     $LinkedServerCount = $Instance.LinkedServers.Count
     $DatabaseCount = $Instance.Databases.Count
     $LoginsCount = $Instance.Logins.Count
+
+
+    #Check SSIS packages on the filesystem
+    $SSISHash = [ordered]@{}
+    $SSISCount = 0
+    foreach($job in $Instance.JobServer.Jobs)
+    {
+        foreach($step in $job.JobSteps)
+        {
+            $stepID = $step.ID
+            if($step.command.Contains(".dts"))
+            {
+                $location = $step.Command.Substring($step.Command.LastIndexOf("`"",$step.Command.IndexOf(".dts")) + 1,$step.Command.IndexOf("`"",$step.Command.IndexOf(".dts"))-$step.Command.LastIndexOf("`"",$step.Command.IndexOf(".dts")) - 1)
+                $SSISHash.Add("$job.Name - Step $StepID",$location)
+                copy-ssis -ServerName $ServerName -JobName $Job.Name -StepNum $stepID -File $location -Destination $WorkDir 
+            }
+        }
+
+    }
+    $SSISCount = $SSISHash.Count
+
+
 
     #SSRS/SSAS existence
     $SSAS = $false
@@ -694,6 +720,10 @@ $html = $html + $MountPointRows +
                     <td>$LinkedServerCount</td>
             </tr>
             <tr>
+                <th>SSIS Package Count:</th>
+                    <td>$SSISCount</td>
+            </tr>
+            <tr>
                 <th>Logins Count:</th>
                     <td>$LoginsCount</td>
             </tr>
@@ -736,7 +766,7 @@ $html = $html + $LinkedDatarows +
             <tr>
             <tr>
                 <th>Name</th>
-                <th>Category</th>
+                <th>PackageLocation</th>
             </tr>
 "@
 $AgentDataRows = ""
@@ -744,10 +774,31 @@ foreach($agentjob in $Instance.JobServer.Jobs | Where-Object {$_.IsEnabled -eq $
 {
     $JobName = $agentjob.name
     $JobCategory = $agentjob.Category
+    $PackageLocation = $SSISHash.Item($JobName)
     $AgentDataRows = $AgentDataRows + "<tr><td>$JobName</td><td>$JobCategory</td></tr>"
 }
-
 $html = $html + $AgentDataRows + 
+@"
+
+        </table>
+        <p>
+        <table>
+            <tr>
+                <th id="firstrow" colspan="3">SSIS Packages</th>
+            <tr>
+            <tr>
+                <th>Job Step</th>
+                <th>Package Location</th>
+            </tr>
+"@
+$SSISRows = ""
+foreach($h in $SSISHash.Keys)
+{
+    $HName = $h
+    $HLocation = $SSISHash.Item($h)
+    $SSISRows = $SSISRows + "<tr><td>$HName</td><td>$HLocation</td></tr>"
+}
+$html = $html + $SSISRows + 
 @"
 
         </table>
@@ -807,4 +858,84 @@ function create-instanceobject
     Submit-SQLStatement -ServerInstance $InstanceName -Database "master" -ModuleName "create-instanceobject" -query ""
 
     return $Instance
+}
+
+function copy-ssis 
+{
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$ServerName,
+        [string]$JobName,
+        [int]$StepNum,
+        [string]$File,
+        [string]$Destination
+    )
+
+    #removes invalid characters from job name
+    $JobName = $JobName | Remove-InvalidFileNameChars
+
+    $Step = "Step $StepNum"
+
+    
+    #get unc path
+    if($File.Substring(0,2) -ne "\\")
+    {
+        $File = $File -replace ':','$'
+        $File = "\\$ServerName\$File"
+    }
+    
+    if(!(Test-Path $File))
+    {
+        write-output "$File not found. Exiting."
+        return
+    }
+    
+    #add SSIS folder under Agent folder
+    $dir = $Destination + "\Agent\SSIS"
+    if(!(Test-Path $dir))
+    {
+        New-Item -Path $dir -ItemType directory
+    }
+
+    #Update directory and add folder for job if it does not exist
+    $dir = $dir + "\$JobName"
+    if(!(Test-Path $dir))
+    {
+        New-Item -Path $dir -ItemType directory
+    }
+
+    #update directory and add folder for job step if it does not exist
+    $dir = $dir + "\$Step"
+    if(!(Test-Path $dir))
+    {
+        New-Item -Path $dir -ItemType directory
+    }
+    
+    $OutFile = $File.Substring($File.LastIndexOf("\",$File.IndexOf(".dts")) + 1)
+    $OutFile = "$dir\$OutFile"
+
+    #If outfile exists, deleted before copying
+    if(Test-Path $OutFile)
+    {
+        Remove-Item $OutFile 
+    }
+
+    Copy-Item -Path $File -Destination $OutFile
+
+
+}
+
+
+Function Remove-InvalidFileNameChars {
+  param(
+    [Parameter(Mandatory=$true,
+      Position=0,
+      ValueFromPipeline=$true,
+      ValueFromPipelineByPropertyName=$true)]
+    [String]$Name
+  )
+
+  $invalidChars = [IO.Path]::GetInvalidFileNameChars() -join ''
+  $re = "[{0}]" -f [RegEx]::Escape($invalidChars)
+  return ($Name -replace $re)
 }
