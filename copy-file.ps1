@@ -1,5 +1,4 @@
-﻿function copy-file {
-    param(
+﻿    param(
         [Parameter(Mandatory=$True)]
         [ValidateScript({Test-Path $_ -PathType 'Container'})] 
         [string]$Source,
@@ -22,4 +21,3 @@
             Copy-Item -Path $_.FullName -Destination $Destination
         }    
     }
-}

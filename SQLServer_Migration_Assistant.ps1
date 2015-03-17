@@ -231,6 +231,7 @@ END
 
             consolidate-all -InstanceName $InstanceName -DestinationRoot $WorkDir
             generate-inventory -InstanceName $InstanceName -DestinationRoot $WorkDir -Environment $Environment
+            Report-ServerGroups -ServerName $ServerName -Destination $WorkDir
         }
 }
 
@@ -267,9 +268,15 @@ Function consolidate-all
             {
                 New-Item -Path "$File" -ItemType file
             }
+            #Create logins first!
+            Get-ChildItem -Path $DestinationRoot -Recurse | Where-Object {$_.name -eq "__All_Logins.sql"} | % {
+                $CurrentFile = $_.FullName
+                get-content $CurrentFile | Add-Content $File
+                
+            }
 
 
-            Get-ChildItem -Path $DestinationRoot -Recurse | Where-Object {$_.Name -like "__All*"} | % {
+            Get-ChildItem -Path $DestinationRoot -Recurse | Where-Object {$_.Name -like "__All*" -and $_.Name -ne "__All_Logins.sql"} | % {
                 $CurrentFile = $_.FullName
                 get-content $CurrentFile | Add-Content $File
             }
@@ -485,10 +492,11 @@ function generate-inventory($InstanceName,$DestinationRoot,$Environment)
         {
             $stepID = $step.ID
             if($step.command.Contains(".dts"))
-            {
+            {9
+                $out = $InstanceName.Replace("\","`$")
                 $location = $step.Command.Substring($step.Command.LastIndexOf("`"",$step.Command.IndexOf(".dts")) + 1,$step.Command.IndexOf("`"",$step.Command.IndexOf(".dts"))-$step.Command.LastIndexOf("`"",$step.Command.IndexOf(".dts")) - 1)
                 $SSISHash.Add("$job.Name - Step $StepID",$location)
-                copy-ssis -ServerName $ServerName -JobName $Job.Name -StepNum $stepID -File $location -Destination $WorkDir 
+                copy-ssis -ServerName $ServerName -JobName $Job.Name -StepNum $stepID -File $location -Destination "z:\$out" 
             }
         }
 
@@ -938,4 +946,20 @@ Function Remove-InvalidFileNameChars {
   $invalidChars = [IO.Path]::GetInvalidFileNameChars() -join ''
   $re = "[{0}]" -f [RegEx]::Escape($invalidChars)
   return ($Name -replace $re)
+}
+
+function Report-ServerGroups ($ServerName,$Destination) {
+
+    $server=$ServerName
+    $computer = [ADSI]"WinNT://$server,computer"
+    $outfile = "$Destination\AD_GroupReport.txt"
+    $content = ""
+    $computer.psbase.children | where { $_.psbase.schemaClassName -eq 'group' } | foreach {
+        $GroupName = $_.name
+        $content = $content + "`n$GroupName `n"
+        $content = $content + "------ `n"
+        $group =[ADSI]$_.psbase.Path
+        $group.psbase.Invoke("Members") | foreach {$content = $content + $_.GetType().InvokeMember('Name', 'GetProperty', $null, $_, $null) + "`n"}
+    } 
+     Out-File -FilePath $outfile -InputObject $content
 }
