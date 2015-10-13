@@ -1,10 +1,22 @@
-﻿            $DriveQuery = 
+﻿                $DriveQuery = 
 @"
 select MountPoint,TotalCapacity/1024/1024/1024 as SizeInGB
 from monitoredDrives md INNER JOIN MonitoredServers ms on md.ServerID = ms.ServerID
 WHERE servername = '{0}'
 and md.deleted = 0
 order by MountPoint
+"@
+
+$ServerRoleQuery =
+@"
+-- Role Members 
+SELECT  'EXEC sp_addsrvrolemember @rolename =' + SPACE(1) 
+        + QUOTENAME(usr1.name, '''') + ', @loginame =' + SPACE(1) 
+        + QUOTENAME(usr2.name, '''') AS '--Role Memberships' 
+FROM    sys.server_principals AS usr1 
+        INNER JOIN sys.server_role_members AS rm ON usr1.principal_id = rm.role_principal_id 
+        INNER JOIN sys.server_principals AS usr2 ON rm.member_principal_id = usr2.principal_id 
+ORDER BY rm.role_principal_id ASC 
 "@
 
 Function script-server
@@ -177,6 +189,9 @@ END
                 }
               ForEach ($item in $AgentArray){
                   $retval = script-object $AgentObject $item $AgentDir
+                  if($item -eq "Jobs"){
+                    remove-mpjobs -DestinationRoot $WorkDir
+                  }
                   if((test-path "$AgentDir\$item") -and $retval -eq 1)
                   {
                        Consolidate-Files $item "$AgentDir\$item"
@@ -205,6 +220,19 @@ END
             $SqlConnection.Open()
             $cmd.ExecuteNonQuery() | Out-Null
             $SqlConnection.Close()
+            $LoginsCount = $InstanceObject.Logins.Count
+            #audit-logins -InstanceLoginCount $LoginsCount -LoginFile $LoginsFile
+            
+
+            #generate owner script 
+            $InstanceObject.Databases | Where-Object {$_.isSystemObject -eq $false} | % {
+            
+                $DatabaseName = $_.name
+                $DatabaseOwner = $_.owner
+                generate-dbowner -database $DatabaseName -owner $DatabaseOwner -destination $WorkDir
+            
+            } 
+
 
             #Script out configuration
             $ConfigDir = $WorkDir + "\Configuration"
@@ -433,7 +461,7 @@ function generate-inventory($InstanceName,$DestinationRoot,$Environment)
         
 
 
-    Submit-SQLStatement -ServerInstance "PHLDVWSSQL002\DVS1201" -Database "CMS" -ModuleName "generate-inventory" -Query "exec ReportServerIOPS @Show_Max_Transfers = 1, @ServerName = '$Servername'" | % {
+    Submit-SQLStatement -ServerInstance "phldvwsidsql001" -Database "CMS" -ModuleName "generate-inventory" -Query "exec ReportServerIOPS @Show_Max_Transfers = 1, @ServerName = '$Servername'" | % {
         $CollectionDate = $_.CollectionDate
         $MaxTransfers = [system.math]::Round($_."Transfers\Sec",2)
         $Reads = [system.math]::Round($_."Reads\Sec",2)
@@ -492,11 +520,11 @@ function generate-inventory($InstanceName,$DestinationRoot,$Environment)
         {
             $stepID = $step.ID
             if($step.command.Contains(".dts"))
-            {9
+            {
                 $out = $InstanceName.Replace("\","`$")
                 $location = $step.Command.Substring($step.Command.LastIndexOf("`"",$step.Command.IndexOf(".dts")) + 1,$step.Command.IndexOf("`"",$step.Command.IndexOf(".dts"))-$step.Command.LastIndexOf("`"",$step.Command.IndexOf(".dts")) - 1)
                 $SSISHash.Add("$job.Name - Step $StepID",$location)
-                copy-ssis -ServerName $ServerName -JobName $Job.Name -StepNum $stepID -File $location -Destination "z:\$out" 
+                copy-ssis -ServerName $ServerName -JobName $Job.Name -StepNum $stepID -File $location -Destination "$DestinationRoot" 
             }
         }
 
@@ -963,3 +991,70 @@ function Report-ServerGroups ($ServerName,$Destination) {
     } 
      Out-File -FilePath $outfile -InputObject $content
 }
+
+function remove-mpjobs {
+
+    param([string]$DestinationRoot)
+
+    process{
+
+        Get-ChildItem "$DestinationRoot\Agent\Jobs" | % {
+            if(($_.name -like "mdw*" -or $_.name -like "DBMaint*" -or $_.name -like "DMaint*" -or $_.name -like "sysutility*" -or $_.name -like "Backup Logins*" -or $_.name -like "Backup Config*" -or $_.name -like "Check *" -or $_.name -like "History Cleanup*" -or $_.Name -like "Recycle*Log*" -or $_.name -like "Rebuild Fragmented Indexes*" -or $_.name -like "Capture DB*") -or (Get-Content $_.FullName | Select-String -Pattern "Maintenance Plan")){
+                Remove-Item -Path $_.FullName
+            }
+                
+        }
+    
+    }
+}
+
+function generate-dbowner {
+    
+    param
+    ([parameter(mandatory=$true)]
+    [string]$database,
+    [string]$owner,
+    [string]$destination
+    
+    )
+    
+    process
+    {
+        $file = "$destination\db_owners.sql"
+
+        if(!(Test-Path -Path $file))
+        {
+            New-Item -Path $file -ItemType file
+        }
+        Add-Content -Path $file -Value "`nALTER AUTHORIZATION ON DATABASE::[$database] TO [$owner]`nGO"
+    
+    }
+
+}
+
+function audit-logins {
+    
+    param
+    ([parameter(mandatory=$true)]
+    [int32]$InstanceLoginCount,
+    [string]$LoginFile        
+    )
+    
+    process
+    {
+        if(!(Test-Path -Path $LoginFile))
+        {
+            write-output 'No Login File found'
+            return
+        }
+        $LoginData = Get-Content $LoginFile
+        $LoginFileCount = ([regex]::Matches($LoginData,"CREATE LOGIN").count)
+
+        if($InstanceLoginCount -ne $LoginFileCount)
+        {
+            $LoginData = "PRINT 'Login miscount. Please Review' /*" + $LoginData + "*/"
+            Set-Content -Value $LoginData -Path $LoginFile
+        }
+    }
+
+} 
