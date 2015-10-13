@@ -131,7 +131,7 @@ if(!(Test-Path -Path $LoggingDirectory -PathType Container))
     }
     catch
     {
-        Write-Output "$LoggingDirectory not found.  Please check server name"
+        read-host "$LoggingDirectory not found.  Please check SourceSerer."
         exit
     }
 }
