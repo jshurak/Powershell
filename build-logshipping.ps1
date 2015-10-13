@@ -1,5 +1,4 @@
-﻿function build-logshipping
-{
+﻿
 
 <#
          .SYNOPSIS
@@ -131,7 +130,7 @@ if(!(Test-Path -Path $LoggingDirectory -PathType Container))
     }
     catch
     {
-        read-host "$LoggingDirectory not found.  Please check SourceSerer."
+        read-host "$LoggingDirectory not found.  Please check SourceServer."
         exit
     }
 }
@@ -529,4 +528,3 @@ WHERE primary_database = '$Database'
 
     log-message $ModuleName "Log shipping build complete for $Database."
     }
-}
