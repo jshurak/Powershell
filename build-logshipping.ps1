@@ -32,9 +32,9 @@
     param
     (
         [parameter(mandatory=$true)]
-        [string]$SourceServer,
-        [string]$TargetServer,
-        [string]$MonitorServer = "",
+        [string]$SourceInstance,
+        [string]$TargetInstance,
+        [string]$MonitorInstance = "",
         [string]$Database,
         [int]$SeedDatabase = 1,
         [int]$CleanupOnly = 0,
@@ -113,37 +113,61 @@ function Get-ScriptDirectory
 {
     Split-Path $script:MyInvocation.MyCommand.Path
 }
-
-if($SourceServer.IndexOf('\') -gt 0)
+function Get-ServerFromInstance($InstanceName)
 {
-    $SourceServerName =  $SourceServer.Substring(0,$SourceServer.IndexOf('\'))
+    if($InstanceName.IndexOf('\') -gt 0)
+    {
+        $ServerName =  $InstanceName.Substring(0,$InstanceName.IndexOf('\'))
+    }
+    else
+    {
+        $ServerName = $InstanceName
+    }
+    return $ServerName
 }
-else
+$SourceServer = Get-ServerFromInstance -InstanceName $SourceInstance
+$TargetServer = Get-ServerFromInstance -InstanceName $TargetInstance
+if($MonitorInstance -ne [string]::Empty)
 {
-    $SourceServerName = $SourceServer   
+    $MonitorServer = Get-ServerFromInstance -InstanceName $MonitorInstance
 }
+$ServerArray = @($SourceServer,$TargetServer,$MonitorServer)
+$InstanceArray = @($SourceInstance,$TargetInstance,$MonitorInstance)
 
 $Path = Get-ScriptDirectory
 $ModuleName = "$Database`_LS_Setup_$(get-date -format 'yyyyMMdd')"
 $LoggingDirectory = "$Path\"
-#Test Server connections and database existence
+#Test Server connections
 try
 {
-    Test-Connection -ComputerName $SourceServer -Count 1 -ErrorAction Stop 
-    Test-Connection -ComputerName $TargetServer -Count 1 -ErrorAction Stop
-    if($MonitorServer -ne [string]::Empty)
+    foreach($server in $ServerArray)
     {
-        Test-Connection -ComputerName $MonitorServer -Count 1 -ErrorAction Stop
+        if($server -ne [string]::Empty)
+        {
+            Test-Connection -ComputerName $Server -Count 1 -ErrorAction Stop     
+        }
     }
 }
 catch
 {
     log-message $ModuleName $_
-    read-host = "Script could not find one of the Servers. Please Check the log."
+    read-host "Script could not find $Server. Please Check the log."
     exit
 }
 
-$FileShare = "\\KMHPEMCFSPA21\SQL_TLog\$SourceServer\$Database"
+#Verify instance connectivity
+try
+{
+    Submit-SQLStatement -ServerInstance $SourceInstance -Database 'master' -ModuleName $ModuleName -Query "SELECT @@SERVERNAME"
+}
+catch
+{
+    log-message $ModuleName $_
+    read-host "Script could not connect to" 
+}
+#Submit-SQLStatement -ServerInstance $SourceInstance -Database 'master' -ModuleName $ModuleName -Query "SELECT database_id FROM sys.databases WHERE name = N'$Database'"
+$FileShareServerName = $SourceInstance.Replace('\','$')
+$FileShare = "\\KMHPEMCFSPA21\SQL_TLog\$FileShareServerName\$Database"
 if($SeedDirectory -eq [string]::Empty)
 {
     $SeedDirectory = $FileShare
@@ -152,7 +176,7 @@ delete-log $ModuleName $LoggingDirectory
 
 #Clean up any previous log shipping remenants
 $PrimaryCleanup1 = @"
-    exec master.dbo.sp_delete_log_shipping_primary_secondary @primary_database = N'$Database', @Secondary_Server = N'$TargetServer',@Secondary_database = N'$Database'
+    exec master.dbo.sp_delete_log_shipping_primary_secondary @primary_database = N'$Database', @Secondary_Server = N'$TargetInstance',@Secondary_database = N'$Database'
 "@
 $PrimaryCleanup2 = @"
     exec master.dbo.sp_delete_log_shipping_primary_database @database = N'$Database'
@@ -166,26 +190,26 @@ $MonitorCleanup = @"
 
 log-message $ModuleName "Cleaning up log shipping for $Database."
 try{
-    Submit-SQLStatement $SourceServer 'master' $ModuleName $PrimaryCleanup1
-    Submit-SQLStatement $TargetServer 'master' $ModuleName $SecondaryCleanup1
-    Submit-SQLStatement $SourceServer 'master' $ModuleName $PrimaryCleanup2
-    if($MonitorServer -ne [string]::Empty)
+    Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryCleanup1
+    Submit-SQLStatement $TargetInstance 'master' $ModuleName $SecondaryCleanup1
+    Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryCleanup2
+    if($MonitorInstance -ne [string]::Empty)
     {
-        Submit-SQLStatement $MonitorServer 'master' $ModuleName $MonitorCleanup
+        Submit-SQLStatement $MonitorInstance 'master' $ModuleName $MonitorCleanup
     }
     log-message $ModuleName "Cleaning up for $Database complete."
-    log-message $ModuleName "Bringing $Database on $TargetServer out of recovery."
-    Submit-SQLStatement $TargetServer 'master' $ModuleName "IF (SELECT state FROM sys.databases WHERE NAME = '$Database') = 1 RESTORE DATABASE $Database WITH RECOVERY;"
+    log-message $ModuleName "Bringing $Database on $TargetInstance out of recovery."
+    Submit-SQLStatement $TargetInstance 'master' $ModuleName "IF (SELECT state FROM sys.databases WHERE NAME = '$Database') = 1 RESTORE DATABASE $Database WITH RECOVERY;"
 }
 catch{
-    log-message $MonitorServer $_ 
+    log-message $MonitorInstance $_ 
 }
 
 if($CleanupOnly -eq 0)
 {
     if($SeedDatabase -eq 1)
     {
-        log-message $ModuleName "Seeding $Database on $TargetServer"
+        log-message $ModuleName "Seeding $Database on $TargetInstance"
         if(!(Test-Path -path "$SeedDirectory\FULL" -PathType Container))
         {
             New-Item -Path "$SeedDirectory\FULL" -ItemType directory
@@ -204,7 +228,7 @@ if($CleanupOnly -eq 0)
 "@
 
         log-message $ModuleName "Setting Recovery to full for $Database and taking a full backup."
-        Submit-SQLStatement $SourceServer 'master' $ModuleName $PrimaryPrepSQL
+        Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryPrepSQL
 
         $SecondaryPrepSQL = @"
             IF db_id('$Database') is not null
@@ -215,9 +239,9 @@ if($CleanupOnly -eq 0)
             WITH REPLACE, NORECOVERY
 "@
 
-        log-message $ModuleName "Dropping $Database on $TargetServer and restoring fresh copy"
-        Submit-SQLStatement $TargetServer 'master' $ModuleName $SecondaryPrepSQL
-        log-message $ModuleName "Seed complete for $Database on $TargetServer"
+        log-message $ModuleName "Dropping $Database on $TargetInstance and restoring fresh copy"
+        Submit-SQLStatement $TargetInstance 'master' $ModuleName $SecondaryPrepSQL
+        log-message $ModuleName "Seed complete for $Database on $TargetInstance"
     }
 
     $PrimaryLSBuild = @"
@@ -241,10 +265,10 @@ if($CleanupOnly -eq 0)
 		    ,@overwrite = 1 
 
 "@
-    if($MonitorServer -ne [string]::Empty)
+    if($MonitorInstance -ne [string]::Empty)
     {
         $PrimaryLSBuild = $PrimaryLSBuild + @"
-            ,@monitor_server = N'$MonitorServer' 
+            ,@monitor_server = N'$MonitorInstance' 
             ,@monitor_server_security_mode = 1 
             ,@ignoreremotemonitor = 1 
 
@@ -261,7 +285,7 @@ if($CleanupOnly -eq 0)
 
 
     EXEC msdb.dbo.sp_add_schedule 
-		    @schedule_name =N'LSBackupSchedule_$SourceServer' 
+		    @schedule_name =N'LSBackupSchedule_$SourceInstance' 
 		    ,@enabled = 1 
 		    ,@freq_type = 4 
 		    ,@freq_interval = 1 
@@ -289,18 +313,18 @@ if($CleanupOnly -eq 0)
 
     EXEC master.dbo.sp_add_log_shipping_primary_secondary 
 		    @primary_database = N'$Database' 
-		    ,@secondary_server = N'$TargetServer' 
+		    ,@secondary_server = N'$TargetInstance' 
 		    ,@secondary_database = N'$Database' 
 		    ,@overwrite = 1 
 
-    -- ****** End: Script to be run at Primary: [$SourceServer]  ******
+    -- ****** End: Script to be run at Primary: [$SourceInstance]  ******
 
 "@
     log-message $ModuleName "Building log shipping for $Database."
-    log-message $ModuleName "Setting up $Database as the primary on $SourceServer."
-    Submit-SQLStatement $SourceServer 'msdb' $ModuleName $PrimaryLSBuild
+    log-message $ModuleName "Setting up $Database as the primary on $SourceInstance."
+    Submit-SQLStatement $SourceInstance 'msdb' $ModuleName $PrimaryLSBuild
 
-    if($MonitorServer -ne [string]::Empty)
+    if($MonitorInstance -ne [string]::Empty)
     {
     $MonitorPrimaryMetricQuery = @"
  SELECT
@@ -314,7 +338,7 @@ if($CleanupOnly -eq 0)
 FROM msdb.dbo.log_shipping_monitor_primary 
 WHERE primary_database = '$Database'
 "@
-    Submit-SQLStatement $SourceServer 'msdb' $ModlueName $MonitorPrimaryMetricQuery | % {
+    Submit-SQLStatement $SourceInstance 'msdb' $ModlueName $MonitorPrimaryMetricQuery | % {
         $PrimaryGUID = $_.primary_id
         $BackupThreshold = $_.backup_threshold
         $ThresholdAlert = $_.threshold_alert
@@ -323,14 +347,14 @@ WHERE primary_database = '$Database'
 
     }
     $MonitorStep1 = @"
-        -- ****** Begin: Script to be run at Monitor: [$MonitorServer] ******
+        -- ****** Begin: Script to be run at Monitor: [$MonitorInstance] ******
 
 
     EXEC msdb.dbo.sp_processlogshippingmonitorprimary 
 		    @mode = 1 
 		    ,@primary_id = N'$PrimaryGUID' 
-		    ,@primary_server = N'$SourceServer' 
-		    ,@monitor_server = N'$MonitorServer' 
+		    ,@primary_server = N'$SourceInstance' 
+		    ,@monitor_server = N'$MonitorInstance' 
 		    ,@monitor_server_security_mode = 1 
 		    ,@primary_database = N'$Database' 
 		    ,@backup_threshold = $BackupThreshold 
@@ -338,15 +362,15 @@ WHERE primary_database = '$Database'
 		    ,@threshold_alert_enabled = $ThresholdAlertEnabled 
 		    ,@history_retention_period = $HistoryRetentionPeriod 
 
-    -- ****** End: Script to be run at Monitor: [$MonitorServer] ******
+    -- ****** End: Script to be run at Monitor: [$MonitorInstance] ******
 "@
 
-        log-message $ModuleName "Adding Primary info to $MonitorServer"
-        Submit-SQLStatement $MonitorServer 'master' $ModuleName $MonitorStep1
+        log-message $ModuleName "Adding Primary info to $MonitorInstance"
+        Submit-SQLStatement $MonitorInstance 'master' $ModuleName $MonitorStep1
     }
     $SecondaryLSBuild = @"
     -- Execute the following statements at the Secondary to configure Log Shipping 
-    -- for the database [$TargetServer].[$Database],
+    -- for the database [$TargetInstance].[$Database],
     -- the script needs to be run at the Secondary in the context of the [msdb] database. 
     ------------------------------------------------------------------------------------- 
     -- Adding the Log Shipping configuration 
@@ -361,22 +385,22 @@ WHERE primary_database = '$Database'
 
 
     EXEC @LS_Add_RetCode = master.dbo.sp_add_log_shipping_secondary_primary 
-		    @primary_server = N'$SourceServer' 
+		    @primary_server = N'$SourceInstance' 
 		    ,@primary_database = N'$Database' 
 		    ,@backup_source_directory = N'$FileShare\LOG' 
 		    ,@backup_destination_directory = N'$FileShare\LOG' 
-		    ,@copy_job_name = N'LSCopy_$SourceServer`_$Database' 
-		    ,@restore_job_name = N'LSRestore_$SourceServer`_$Database' 
+		    ,@copy_job_name = N'LSCopy_$SourceInstance`_$Database' 
+		    ,@restore_job_name = N'LSRestore_$SourceInstance`_$Database' 
 		    ,@file_retention_period = 4320 
 		    ,@overwrite = 1 
 		    ,@copy_job_id = @LS_Secondary__CopyJobId OUTPUT 
 		    ,@restore_job_id = @LS_Secondary__RestoreJobId OUTPUT 
 		    ,@secondary_id = @LS_Secondary__SecondaryId OUTPUT 
 "@
-    if($MonitorServer -ne [string]::Empty)
+    if($MonitorInstance -ne [string]::Empty)
     {
         $SecondaryLSBuild = $SecondaryLSBuild + @"
-		    ,@monitor_server = N'$MonitorServer' 
+		    ,@monitor_server = N'$MonitorInstance' 
 		    ,@monitor_server_security_mode = 1 
 "@
     }
@@ -443,7 +467,7 @@ WHERE primary_database = '$Database'
 
     EXEC @LS_Add_RetCode2 = master.dbo.sp_add_log_shipping_secondary_database 
 		    @secondary_database = N'$Database' 
-		    ,@primary_server = N'$SourceServer' 
+		    ,@primary_server = N'$SourceInstance' 
 		    ,@primary_database = N'$Database' 
 		    ,@restore_delay = 20 
 		    ,@restore_mode = 0 
@@ -454,7 +478,7 @@ WHERE primary_database = '$Database'
 		    ,@overwrite = 1 
 		    
 "@
-    if($MonitorServer -ne [string]::Empty)
+    if($MonitorInstance -ne [string]::Empty)
     {
        $SecondaryLSBuild = $SecondaryLSBuild + @"
             ,@ignoreremotemonitor = 1 
@@ -480,13 +504,13 @@ WHERE primary_database = '$Database'
     END 
 
 
-    -- ****** End: Script to be run at Secondary: [$TargetServer] ******
+    -- ****** End: Script to be run at Secondary: [$TargetInstance] ******
 
     
 "@
-    log-message $ModuleName "Setting up $Database as secondary on $TargetServer"
-    Submit-SQLStatement $TargetServer 'msdb' $ModuleName $SecondaryLSBuild
-    if($MonitorServer -ne [string]::Empty)
+    log-message $ModuleName "Setting up $Database as secondary on $TargetInstance"
+    Submit-SQLStatement $TargetInstance 'msdb' $ModuleName $SecondaryLSBuild
+    if($MonitorInstance -ne [string]::Empty)
     {
     $MonitorSecondaryMetricQuery = @"
     SELECT
@@ -499,9 +523,9 @@ WHERE primary_database = '$Database'
      history_retention_period
     FROM msdb.dbo.log_shipping_monitor_secondary 
     WHERE primary_database = '$Database' 
-    AND primary_server = '$SourceServer'
+    AND primary_server = '$SourceInstance'
 "@
-    Submit-SQLStatement $TargetServer 'msdb' $ModuleName $MonitorSecondaryMetricQuery | % {
+    Submit-SQLStatement $TargetInstance 'msdb' $ModuleName $MonitorSecondaryMetricQuery | % {
         $SecondaryGUID = $_.secondary_id
         $RestoreThreshold = $_.restore_threshold
         $SecondaryThresholdAlert = $_.threshold_alert
@@ -510,28 +534,28 @@ WHERE primary_database = '$Database'
     }
     $MonitorStep2 = @"
 
-    -- ****** Begin: Script to be run at Monitor: [$MonitorServer] ******
+    -- ****** Begin: Script to be run at Monitor: [$MonitorInstance] ******
 
 
     EXEC msdb.dbo.sp_processlogshippingmonitorsecondary 
 		    @mode = 1 
-		    ,@secondary_server = N'$TargetServer' 
+		    ,@secondary_server = N'$TargetInstance' 
 		    ,@secondary_database = N'$Database' 
 		    ,@secondary_id = N'$SecondaryGUID' 
-		    ,@primary_server = N'$SourceServer' 
+		    ,@primary_server = N'$SourceInstance' 
 		    ,@primary_database = N'$Database' 
 		    ,@restore_threshold = $RestoreThreshold   
 		    ,@threshold_alert = $SecondaryThresholdAlert 
 		    ,@threshold_alert_enabled = $SecondaryThresholdAlertEnabled
 		    ,@history_retention_period	= $SecondaryHistoryRetentionPeriod 
-		    ,@monitor_server = N'$MonitorServer' 
+		    ,@monitor_server = N'$MonitorInstance' 
 		    ,@monitor_server_security_mode = 1 
-    -- ****** End: Script to be run at Monitor: [$MonitorServer] ******
+    -- ****** End: Script to be run at Monitor: [$MonitorInstance] ******
 
 "@
 
-        log-message $ModuleName "Adding secondary information to $MonitorServer"
-        Submit-SQLStatement $MonitorServer 'master' $ModuleName $MonitorStep2
+        log-message $ModuleName "Adding secondary information to $MonitorInstance"
+        Submit-SQLStatement $MonitorInstance 'master' $ModuleName $MonitorStep2
      }
 
     log-message $ModuleName "Log shipping build complete for $Database."
