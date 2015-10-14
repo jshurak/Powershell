@@ -1,6 +1,4 @@
-﻿
-
-<#
+﻿<#
          .SYNOPSIS
             A function to manage log shipping.
 
@@ -111,6 +109,10 @@ function delete-log {
         remove-item -Path $outfile
     }
 }
+function Get-ScriptDirectory
+{
+    Split-Path $script:MyInvocation.MyCommand.Path
+}
 
 if($SourceServer.IndexOf('\') -gt 0)
 {
@@ -120,8 +122,20 @@ else
 {
     $SourceServerName = $SourceServer   
 }
+
+$Path = Get-ScriptDirectory
 $ModuleName = "$Database`_LS_Setup_$(get-date -format 'yyyyMMdd')"
-$LoggingDirectory = "\\$SourceServerName\D$\Util\LS_logs\"
+$LoggingDirectory = "$Path"
+#Test Server connections and database existence
+try
+{
+    Test-Connection -ComputerName $SourceServer -Count 1
+}
+catch
+{
+    
+}
+
 if(!(Test-Path -Path $LoggingDirectory -PathType Container))
 {
     try
@@ -134,6 +148,8 @@ if(!(Test-Path -Path $LoggingDirectory -PathType Container))
         exit
     }
 }
+
+
 
 $FileShare = "\\KMHPEMCFSPA21\SQL_TLog\$SourceServer\$Database"
 if($SeedDirectory -eq [string]::Empty)
