@@ -137,6 +137,7 @@ $InstanceArray = @($SourceInstance,$TargetInstance,$MonitorInstance)
 $Path = Get-ScriptDirectory
 $ModuleName = "$Database`_LS_Setup_$(get-date -format 'yyyyMMdd')"
 $LoggingDirectory = "$Path\"
+delete-log $ModuleName $LoggingDirectory
 #Test Server connections
 try
 {
@@ -158,12 +159,19 @@ catch
 #Verify instance connectivity
 try
 {
-    Submit-SQLStatement -ServerInstance $SourceInstance -Database 'master' -ModuleName $ModuleName -Query "SELECT @@SERVERNAME"
+    foreach($Instance in $InstanceArray)
+    {
+        if(!(Submit-SQLStatement -ServerInstance $Instance -Database 'master' -ModuleName $ModuleName -Query "SELECT @@SERVERNAME"))
+        {
+            throw 
+        }
+    }
 }
 catch
 {
-    log-message $ModuleName $_
-    read-host "Script could not connect to" 
+    log-message $ModuleName "Error Connecting to $Instance"
+    read-host "Script could not connect to $Instance."
+    exit
 }
 #Submit-SQLStatement -ServerInstance $SourceInstance -Database 'master' -ModuleName $ModuleName -Query "SELECT database_id FROM sys.databases WHERE name = N'$Database'"
 $FileShareServerName = $SourceInstance.Replace('\','$')
@@ -172,7 +180,7 @@ if($SeedDirectory -eq [string]::Empty)
 {
     $SeedDirectory = $FileShare
 }
-delete-log $ModuleName $LoggingDirectory
+
 
 #Clean up any previous log shipping remenants
 $PrimaryCleanup1 = @"
