@@ -212,24 +212,12 @@ $MonitorCleanup = @"
 
 log-message $ModuleName "Cleaning up log shipping for $Database."
 try{
-    if(!(Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryCleanup1))
-    {
-        throw
-    }
-    if(!(Submit-SQLStatement $TargetInstance 'master' $ModuleName $SecondaryCleanup1))
-    {
-        throw
-    }
-    if(!(Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryCleanup2))
-    {
-        throw
-    }
+    Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryCleanup1
+    Submit-SQLStatement $TargetInstance 'master' $ModuleName $SecondaryCleanup1
+    Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryCleanup2
     if($MonitorInstance -ne [string]::Empty)
     {
-        if(!(Submit-SQLStatement $MonitorInstance 'master' $ModuleName $MonitorCleanup))
-        {
-            throw
-        }
+       Submit-SQLStatement $MonitorInstance 'master' $ModuleName $MonitorCleanup
     }
     log-message $ModuleName "Cleaning up for $Database complete."
     log-message $ModuleName "Bringing $Database on $TargetInstance out of recovery."
