@@ -125,31 +125,23 @@ else
 
 $Path = Get-ScriptDirectory
 $ModuleName = "$Database`_LS_Setup_$(get-date -format 'yyyyMMdd')"
-$LoggingDirectory = "$Path"
+$LoggingDirectory = "$Path\"
 #Test Server connections and database existence
 try
 {
-    Test-Connection -ComputerName $SourceServer -Count 1
+    Test-Connection -ComputerName $SourceServer -Count 1 -ErrorAction Stop 
+    Test-Connection -ComputerName $TargetServer -Count 1 -ErrorAction Stop
+    if($MonitorServer -ne [string]::Empty)
+    {
+        Test-Connection -ComputerName $MonitorServer -Count 1 -ErrorAction Stop
+    }
 }
 catch
 {
-    
+    log-message $ModuleName $_
+    read-host = "Script could not find one of the Servers. Please Check the log."
+    exit
 }
-
-if(!(Test-Path -Path $LoggingDirectory -PathType Container))
-{
-    try
-    {
-        New-Item -Path $LoggingDirectory -ItemType directory -ErrorAction Stop
-    }
-    catch
-    {
-        read-host "$LoggingDirectory not found.  Please check SourceServer."
-        exit
-    }
-}
-
-
 
 $FileShare = "\\KMHPEMCFSPA21\SQL_TLog\$SourceServer\$Database"
 if($SeedDirectory -eq [string]::Empty)
