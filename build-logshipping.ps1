@@ -173,7 +173,21 @@ catch
     read-host "Script could not connect to $Instance."
     exit
 }
-#Submit-SQLStatement -ServerInstance $SourceInstance -Database 'master' -ModuleName $ModuleName -Query "SELECT database_id FROM sys.databases WHERE name = N'$Database'"
+#verify database exists
+try
+{
+    $dbid = Submit-SQLStatement -ServerInstance $SourceInstance -Database 'master' -ModuleName $ModuleName -Query "SELECT database_id FROM sys.databases WHERE name = N'$Database'"
+    if($dbid -eq $null)
+    {
+        throw
+    }
+}
+catch
+{
+    log-message $ModuleName "$Database not found on $SourceInstance."
+    read-host "Script did not find the $Database database on $SourceInstance.  Please verify."
+    exit
+}
 $FileShareServerName = $SourceInstance.Replace('\','$')
 $FileShare = "\\KMHPEMCFSPA21\SQL_TLog\$FileShareServerName\$Database"
 if($SeedDirectory -eq [string]::Empty)
@@ -198,16 +212,31 @@ $MonitorCleanup = @"
 
 log-message $ModuleName "Cleaning up log shipping for $Database."
 try{
-    Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryCleanup1
-    Submit-SQLStatement $TargetInstance 'master' $ModuleName $SecondaryCleanup1
-    Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryCleanup2
+    if(!(Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryCleanup1))
+    {
+        throw
+    }
+    if(!(Submit-SQLStatement $TargetInstance 'master' $ModuleName $SecondaryCleanup1))
+    {
+        throw
+    }
+    if(!(Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryCleanup2))
+    {
+        throw
+    }
     if($MonitorInstance -ne [string]::Empty)
     {
-        Submit-SQLStatement $MonitorInstance 'master' $ModuleName $MonitorCleanup
+        if(!(Submit-SQLStatement $MonitorInstance 'master' $ModuleName $MonitorCleanup))
+        {
+            throw
+        }
     }
     log-message $ModuleName "Cleaning up for $Database complete."
     log-message $ModuleName "Bringing $Database on $TargetInstance out of recovery."
-    Submit-SQLStatement $TargetInstance 'master' $ModuleName "IF (SELECT state FROM sys.databases WHERE NAME = '$Database') = 1 RESTORE DATABASE $Database WITH RECOVERY;"
+    if(!(Submit-SQLStatement $TargetInstance 'master' $ModuleName "IF (SELECT state FROM sys.databases WHERE NAME = '$Database') = 1 RESTORE DATABASE $Database WITH RECOVERY;"))
+    {
+        throw
+    }
 }
 catch{
     log-message $MonitorInstance $_ 
