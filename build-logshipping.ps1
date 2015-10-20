@@ -131,8 +131,26 @@ if($MonitorInstance -ne [string]::Empty)
 {
     $MonitorServer = Get-ServerFromInstance -InstanceName $MonitorInstance
 }
-$ServerArray = @($SourceServer,$TargetServer,$MonitorServer)
-$InstanceArray = @($SourceInstance,$TargetInstance,$MonitorInstance)
+switch($CleanupOnly)
+{
+    2
+    {
+        $ServerArray = @($SourceServer,$MonitorServer)
+        $InstanceArray = @($SourceInstance,$MonitorInstance)
+    }
+    3
+    {
+        $ServerArray = @($TargetServer,$MonitorServer)
+        $InstanceArray = @($TargetInstance,$MonitorInstance)
+    }
+    default
+    {
+        $ServerArray = @($SourceServer,$TargetServer,$MonitorServer)
+        $InstanceArray = @($SourceInstance,$TargetInstance,$MonitorInstance)
+    }
+}
+
+
 
 $Path = Get-ScriptDirectory
 $ModuleName = "$Database`_LS_Setup_$(get-date -format 'yyyyMMdd')"
@@ -152,7 +170,7 @@ try
 catch
 {
     log-message $ModuleName $_
-    read-host "Script could not find $Server. Please Check the log."
+    $response = read-host "Script could not find $Server. Please Check the log."
     exit
 }
 
