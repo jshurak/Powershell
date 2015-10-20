@@ -185,8 +185,11 @@ try
 catch
 {
     log-message $ModuleName "$Database not found on $SourceInstance."
-    read-host "Script did not find the $Database database on $SourceInstance.  Please verify."
-    exit
+    $response = read-host "Script did not find the $Database database on $SourceInstance.  Please verify." 
+    if($response -ne 'continue' -and $CleanupOnly -eq 1)
+    {
+        exit
+    }
 }
 $FileShareServerName = $SourceInstance.Replace('\','$')
 $FileShare = "\\KMHPEMCFSPA21\SQL_TLog\$FileShareServerName\$Database"
