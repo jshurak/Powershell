@@ -135,18 +135,18 @@ switch($CleanupOnly)
 {
     2
     {
-        $ServerArray = @($SourceServer,$MonitorServer)
-        $InstanceArray = @($SourceInstance,$MonitorInstance)
+        $ServerArray = @($SourceServer)
+        $InstanceArray = @($SourceInstance)
     }
     3
     {
-        $ServerArray = @($TargetServer,$MonitorServer)
-        $InstanceArray = @($TargetInstance,$MonitorInstance)
+        $ServerArray = @($TargetServer)
+        $InstanceArray = @($TargetInstance)
     }
     default
     {
-        $ServerArray = @($SourceServer,$TargetServer,$MonitorServer)
-        $InstanceArray = @($SourceInstance,$TargetInstance,$MonitorInstance)
+        $ServerArray = @($SourceServer,$TargetServer)
+        $InstanceArray = @($SourceInstance,$TargetInstance)
     }
 }
 
@@ -157,6 +157,11 @@ $ModuleName = "$Database`_LS_Setup_$(get-date -format 'yyyyMMdd')"
 $LoggingDirectory = "$Path\"
 delete-log $ModuleName $LoggingDirectory
 #Test Server connections
+if($MonitorInstance -ne [string]::Empty)
+{
+    $ServerArray += $MonitorServer
+    $InstanceArray += $MonitorInstance
+}
 try
 {
     foreach($server in $ServerArray)
