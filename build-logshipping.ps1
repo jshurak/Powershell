@@ -233,19 +233,54 @@ $MonitorCleanup = @"
 
 log-message $ModuleName "Cleaning up log shipping for $Database."
 try{
-    Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryCleanup1
-    Submit-SQLStatement $TargetInstance 'master' $ModuleName $SecondaryCleanup1
-    Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryCleanup2
-    if($MonitorInstance -ne [string]::Empty)
+
+    switch ($CleanupOnly)
     {
-       Submit-SQLStatement $MonitorInstance 'master' $ModuleName $MonitorCleanup
+        2
+        {
+            Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryCleanup1
+            Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryCleanup2
+            if($MonitorInstance -ne [string]::Empty)
+            {
+               Submit-SQLStatement $MonitorInstance 'master' $ModuleName $MonitorCleanup
+               log-message $ModuleName "Cleaning up for $Database complete for $MonitorInstance."
+            }
+            log-message $ModuleName "Cleaning up for $Database complete for $SourceInstance."
+        }
+        3
+        {
+            Submit-SQLStatement $TargetInstance 'master' $ModuleName $SecondaryCleanup1
+            if($MonitorInstance -ne [string]::Empty)
+            {
+               Submit-SQLStatement $MonitorInstance 'master' $ModuleName $MonitorCleanup
+               log-message $ModuleName "Cleaning up for $Database complete for $MonitorInstance."
+            }
+            log-message $ModuleName "Cleaning up for $Database complete."
+            log-message $ModuleName "Bringing $Database on $TargetInstance out of recovery."
+            if(!(Submit-SQLStatement $TargetInstance 'master' $ModuleName "IF (SELECT state FROM sys.databases WHERE NAME = '$Database') = 1 RESTORE DATABASE $Database WITH RECOVERY;"))
+            {
+                throw
+            }
+        }
+        default
+        {
+            Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryCleanup1
+            Submit-SQLStatement $TargetInstance 'master' $ModuleName $SecondaryCleanup1
+            Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryCleanup2
+            if($MonitorInstance -ne [string]::Empty)
+            {
+               Submit-SQLStatement $MonitorInstance 'master' $ModuleName $MonitorCleanup
+            }
+            log-message $ModuleName "Cleaning up for $Database complete."
+            log-message $ModuleName "Bringing $Database on $TargetInstance out of recovery."
+            if(!(Submit-SQLStatement $TargetInstance 'master' $ModuleName "IF (SELECT state FROM sys.databases WHERE NAME = '$Database') = 1 RESTORE DATABASE $Database WITH RECOVERY;"))
+            {
+                throw
+            }
+        }
     }
-    log-message $ModuleName "Cleaning up for $Database complete."
-    log-message $ModuleName "Bringing $Database on $TargetInstance out of recovery."
-    if(!(Submit-SQLStatement $TargetInstance 'master' $ModuleName "IF (SELECT state FROM sys.databases WHERE NAME = '$Database') = 1 RESTORE DATABASE $Database WITH RECOVERY;"))
-    {
-        throw
-    }
+
+
 }
 catch{
     log-message $MonitorInstance $_ 
