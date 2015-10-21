@@ -17,7 +17,7 @@
          .PARAMETER SeedDatabase
             A bit parameter. Set to 1, a full backup will be executed against the primary database. The database on the secondary database will be dropped and restored from this backup. Setting this to 0 will bypass this process. The default value is 1.
          .PARAMETER CleanupOnly
-            A bit parameter. Set to 1, the function will remove log shipping between the primary, secondary and monitoring server (if specified) for the specified database and bring the target server's database out of recovery. The cleanup procedure runs no matter what.  It must be ensured that Log shipping is not set up between the servers and database before attempting to implement log shipping. Setting this parameter to 1 stops the script after the clean up process. The default is 0. 
+            A bit parameter. Set to 1, the function will remove log shipping between the primary, secondary and monitoring server (if specified) for the specified database and bring the target server's database out of recovery. The cleanup procedure runs no matter what.  It must be ensured that Log shipping is not set up between the servers and database before attempting to implement log shipping. Setting this parameter to 1 stops the script after the clean up process. Setting this parameter to 2 will clean up the primary server only. Setting this parameter to 3 will cleanup the secondary server and bring the defined database out of recovery. The default is 0. 
          .PARAMETER SeedDirectory
             Setting this will determine the location to store the full database backup used to seed the secondary database.  Its default is null and if not specified, will use the SQL_TLog file share.
          .EXAMPLE
