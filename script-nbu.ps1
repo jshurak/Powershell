@@ -40,19 +40,23 @@ function Get-ServerFromInstance($InstanceName)
     }
     return $ServerName
 }
-function Get-NamedInstance($InstanceName)
+function Get-NamedInstance($NamedInstance)
 {
-    $Stub = $InstanceName.Substring($InstanceName.IndexOf('\')+1)
+    $Stub = $NamedInstance.Substring($NamedInstance.IndexOf('\')+1)
     Return $Stub
 }
     
     $SourceHost = Get-ServerFromInstance $SourceInstance
     $TargetHost = Get-ServerFromInstance $TargetInstance
-    if($InstanceName.IndexOf('\') -gt 0)
+    if($SourceInstance.IndexOf('\') -gt 0)
     {
-        $SourceInstance = Get-NamedInstance $SourceInstance
+        $SourceStub = Get-NamedInstance $SourceInstance
     }
-
+    if($TargetInstance.IndexOf('\') -gt 0)
+    {
+        $TargetStub = Get-NamedInstance $TargetInstance
+    }
+    $TargetInstanceString = "SQLINSTANCE `"$TargetStub`""
 
     #Get the list of databases to restore
             
@@ -175,6 +179,11 @@ OBJECTTYPE DATABASE
 DATABASE "$DatabaseName"
 NBIMAGE "$Image"
 SQLHOST "$TargetHost"
+"@
+            $Template = $Template + @"
+$TargetInstanceString
+@"
+            $Template = $Template + @"
 NBSERVER "$NBUMaster"
 STRIPES 004
 BROWSECLIENT "$SourceHost"
