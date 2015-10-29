@@ -45,6 +45,11 @@ function Get-NamedInstance($NamedInstance)
     $Stub = $NamedInstance.Substring($NamedInstance.IndexOf('\')+1)
     Return $Stub
 }
+
+[System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SqlServer.Smo") | Out-Null
+$InstanceObject = New-Object('Microsoft.SqlServer.Management.Smo.Server') "$TargetInstance"
+$TargetPhysical = $InstanceObject.ComputerNamePhysicalNetBIOS
+
     
     $SourceHost = Get-ServerFromInstance $SourceInstance
     $TargetHost = Get-ServerFromInstance $TargetInstance
@@ -99,8 +104,8 @@ function Get-NamedInstance($NamedInstance)
     $PolicyHash.Add($NBUFullPolicy,$MostRecentSunday.ToShortDateString())
             
     #Start the process of building the list
-    $Path = "\\$TargetHost\c$\Program Files\VERITAS\NetBackup\bin\bplist.exe"
-    $BatchPath = "\\$TargetHost\c$\Program Files\VERITAS\NetBackup\DbExt\MsSql\Daily_Restore.bch"
+    $Path = "\\$TargetPhysical\c$\Program Files\VERITAS\NetBackup\bin\bplist.exe"
+    $BatchPath = "\\$TargetPhysical\c$\Program Files\VERITAS\NetBackup\DbExt\MsSql\Daily_Restore.bch"
     $NBUMaster = 'RDGNBMS01'
     if(Test-Path -Path $BatchPath)
     {
