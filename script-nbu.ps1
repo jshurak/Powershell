@@ -50,7 +50,7 @@ function Get-NamedInstance($NamedInstance)
 $InstanceObject = New-Object('Microsoft.SqlServer.Management.Smo.Server') "$TargetInstance"
 $TargetPhysical = $InstanceObject.ComputerNamePhysicalNetBIOS
 
-    
+    $TargetInstanceString =''
     $SourceHost = Get-ServerFromInstance $SourceInstance
     $TargetHost = Get-ServerFromInstance $TargetInstance
     if($SourceInstance.IndexOf('\') -gt 0)
@@ -60,8 +60,9 @@ $TargetPhysical = $InstanceObject.ComputerNamePhysicalNetBIOS
     if($TargetInstance.IndexOf('\') -gt 0)
     {
         $TargetStub = Get-NamedInstance $TargetInstance
+        $TargetInstanceString = "SQLINSTANCE `"$TargetStub`""
     }
-    $TargetInstanceString = "SQLINSTANCE `"$TargetStub`""
+    
 
     #Get the list of databases to restore
             
@@ -178,17 +179,18 @@ $TargetPhysical = $InstanceObject.ComputerNamePhysicalNetBIOS
                 $RecoveryState = 'NOTRECOVERED'
             }
 
-            $Template = @"
+$Template = @"
 OPERATION RESTORE
 OBJECTTYPE DATABASE
 DATABASE "$DatabaseName"
 NBIMAGE "$Image"
 SQLHOST "$TargetHost"
+`
 "@
-            $Template = $Template + @"
-$TargetInstanceString
-@"
-            $Template = $Template + @"
+if($TargetInstanceString -ne [string]::Empty){
+$Template = $Template + "$TargetInstanceString`n"
+}
+$Template = $Template + @"
 NBSERVER "$NBUMaster"
 STRIPES 004
 BROWSECLIENT "$SourceHost"
