@@ -523,6 +523,7 @@ function generate-inventory($InstanceName,$DestinationRoot,$Environment)
             {
                 $out = $InstanceName.Replace("\","`$")
                 $location = $step.Command.Substring($step.Command.LastIndexOf("`"",$step.Command.IndexOf(".dts")) + 1,$step.Command.IndexOf("`"",$step.Command.IndexOf(".dts"))-$step.Command.LastIndexOf("`"",$step.Command.IndexOf(".dts")) - 1)
+                if($location.Substring($location.Length -1) -eq '\'){$location = $location.substring(0,$location.Length -1)}
                 $SSISHash.Add("$job.Name - Step $StepID",$location)
                 copy-ssis -ServerName $ServerName -JobName $Job.Name -StepNum $stepID -File $location -Destination "$DestinationRoot" 
             }
@@ -560,7 +561,7 @@ function generate-inventory($InstanceName,$DestinationRoot,$Environment)
     
 
     $MountHash = @{}
-    Submit-SQLStatement -ServerInstance "PHLDVWSSQL002\DVS1201" -Database "CMS" -ModuleName "Drive" -Query ($DriveQuery -f $ServerName) | % {
+    Submit-SQLStatement -ServerInstance "phldvwsidsql001" -Database "CMS" -ModuleName "Drive" -Query ($DriveQuery -f $ServerName) | % {
         $MountHash.Add($_.MountPoint,$_.SizeInGB)
             
     }
