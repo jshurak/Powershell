@@ -318,7 +318,7 @@ if($CleanupOnly -eq 0)
 
         $SecondaryPrepSQL = @"
             IF db_id('$Database') is not null
-	        DROP DATABASE LS_TEST
+	        DROP DATABASE $Database
 
             RESTORE DATABASE $Database
             FROM DISK = '$SeedDirectory\FULL\$Database`_FULL.bak'
