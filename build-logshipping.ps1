@@ -357,6 +357,11 @@ if($CleanupOnly -eq 0)
         Submit-SQLStatement $TargetInstance 'master' $ModuleName $SecondaryPrepSQL
         log-message $ModuleName "Seed complete for $Database on $TargetInstance"
     }
+    #Test path for log locations
+    if(!(Test-Path -path "$SeedDirectory\LOG" -PathType Container))
+    {
+        New-Item -Path "$SeedDirectory\LOG" -ItemType directory
+    }
 
     $PrimaryLSBuild = @"
     DECLARE @LS_BackupJobId	AS uniqueidentifier 
