@@ -337,7 +337,7 @@ if($CleanupOnly -eq 0)
 
 
     EXEC @SP_Add_RetCode = master.dbo.sp_add_log_shipping_primary_database 
-		    @database = N'LS_Test' 
+		    @database = N'$Database' 
 		    ,@backup_directory = N'$FileShare\LOG' 
 		    ,@backup_share = N'$FileShare\LOG' 
 		    ,@backup_job_name = N'LSBackup_$Database' 
