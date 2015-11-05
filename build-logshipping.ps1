@@ -261,10 +261,13 @@ try{
                log-message $ModuleName "Cleaning up for $Database complete for $MonitorInstance."
             }
             log-message $ModuleName "Cleaning up for $Database complete."
-            log-message $ModuleName "Bringing $Database on $TargetInstance out of recovery."
-            if(!(Submit-SQLStatement $TargetInstance 'master' $ModuleName "IF (SELECT state FROM sys.databases WHERE NAME = '$Database') = 1 RESTORE DATABASE $Database WITH RECOVERY;"))
+            if($SeedDatabase -eq 1)
             {
-                throw
+                log-message $ModuleName "Bringing $Database on $TargetInstance out of recovery."
+                if(!(Submit-SQLStatement $TargetInstance 'master' $ModuleName "IF (SELECT state FROM sys.databases WHERE NAME = '$Database') = 1 RESTORE DATABASE $Database WITH RECOVERY;"))
+                {
+                    throw
+                }
             }
         }
         default
