@@ -298,6 +298,11 @@ if($CleanupOnly -eq 0)
 {
     if($SeedDatabase -eq 1)
     {
+        [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SqlServer.Smo") | Out-Null
+        $InstanceObject = New-Object('Microsoft.SqlServer.Management.Smo.Server') "$TargetInstance"
+        $DefaultDataFilePath = $TargetInstance.DefaultFile
+        $DefaultLogFilePath = $TargetInstance.DefaultLog
+
         log-message $ModuleName "Seeding $Database on $TargetInstance"
         if(!(Test-Path -path "$SeedDirectory\FULL" -PathType Container))
         {
@@ -318,6 +323,7 @@ if($CleanupOnly -eq 0)
 
         log-message $ModuleName "Setting Recovery to full for $Database and taking a full backup."
         Submit-SQLStatement $SourceInstance 'master' $ModuleName $PrimaryPrepSQL
+        
 
         $SecondaryPrepSQL = @"
             IF db_id('$Database') is not null
@@ -327,6 +333,22 @@ if($CleanupOnly -eq 0)
             FROM DISK = '$SeedDirectory\FULL\$Database`_FULL.bak'
             WITH REPLACE, NORECOVERY
 "@
+        Submit-SQLStatement $TargetInstance 'master' $ModuleName "restore filelistonly from disk = '$SeedDirectory\FULL\$Database`_FULL.bak'" | % {
+            $LogicalName = $_.LogicalName
+            $PhysicalFile = $_.PhysicalName.substring($_.PhysicalName.LastIndexOf('\') + 1)
+            switch($_.Type)
+            {
+                'D'
+                {
+                    $MovePath = "$DefaultDataFilePath\$PhysicalFile"
+                }
+                'L'
+                {
+                    $MovePath = "$DefaultLogFilePath\$PhysicalFile"
+                }
+            }
+
+        }
 
         log-message $ModuleName "Dropping $Database on $TargetInstance and restoring fresh copy"
         Submit-SQLStatement $TargetInstance 'master' $ModuleName $SecondaryPrepSQL
