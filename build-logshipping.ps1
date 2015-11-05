@@ -280,10 +280,13 @@ try{
                Submit-SQLStatement $MonitorInstance 'master' $ModuleName $MonitorCleanup
             }
             log-message $ModuleName "Cleaning up for $Database complete."
-            log-message $ModuleName "Bringing $Database on $TargetInstance out of recovery."
-            if(!(Submit-SQLStatement $TargetInstance 'master' $ModuleName "IF (SELECT state FROM sys.databases WHERE NAME = '$Database') = 1 RESTORE DATABASE $Database WITH RECOVERY;"))
+            if($SeedDatabase -eq 1)
             {
-                throw
+                log-message $ModuleName "Bringing $Database on $TargetInstance out of recovery."
+                if(!(Submit-SQLStatement $TargetInstance 'master' $ModuleName "IF (SELECT state FROM sys.databases WHERE NAME = '$Database') = 1 RESTORE DATABASE $Database WITH RECOVERY;"))
+                {
+                    throw
+                }
             }
         }
     }
@@ -347,7 +350,7 @@ if($CleanupOnly -eq 0)
                     $MovePath = "$DefaultLogFilePath\$PhysicalFile"
                 }
             }
-
+            $SecondaryPrepSQL = $SecondaryPrepSQL + "`n,MOVE '$LogicalName'`nTO '$MovePath'"
         }
 
         log-message $ModuleName "Dropping $Database on $TargetInstance and restoring fresh copy"
