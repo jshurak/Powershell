@@ -303,8 +303,8 @@ if($CleanupOnly -eq 0)
     {
         [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SqlServer.Smo") | Out-Null
         $InstanceObject = New-Object('Microsoft.SqlServer.Management.Smo.Server') "$TargetInstance"
-        $DefaultDataFilePath = $TargetInstance.DefaultFile
-        $DefaultLogFilePath = $TargetInstance.DefaultLog
+        $DefaultDataFilePath = $InstanceObject.DefaultFile
+        $DefaultLogFilePath = $InstanceObject.DefaultLog
 
         log-message $ModuleName "Seeding $Database on $TargetInstance"
         if(!(Test-Path -path "$SeedDirectory\FULL" -PathType Container))
