@@ -155,7 +155,8 @@ switch($CleanupOnly)
 $Path = Get-ScriptDirectory
 $ModuleName = "$Database`_LS_Setup_$(get-date -format 'yyyyMMdd')"
 $LoggingDirectory = "$Path\"
-delete-log $ModuleName $LoggingDirectory
+#delete-log $ModuleName $LoggingDirectory
+
 #Test Server connections
 if($MonitorInstance -ne [string]::Empty)
 {
