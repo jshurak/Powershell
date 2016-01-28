@@ -1,0 +1,7 @@
+CARE_PMED
+CRIS10G
+CRIS9I
+ssmatesterdb
+ssmatesterdb_syb
+sysdb
+WINUCS
