@@ -1,5 +1,22 @@
-$InstanceName = 'instancename'
-$DestinationRoot = 'outputdirectory' # include trailing backslash
+<#
+ This script will connect to the specified instance and output listed database objects.
+ Specify the $InstanceName and $DestinationRoot (where you want the output).
+
+ It will create a directory structure for Instance\(instance name if applicable)\Database\Object with corresponding scripts in each object)
+
+ This is ported over from a larger set of scripts.  It will fail if the folder exists already.
+
+#>
+
+
+
+$InstanceName = 'instance' # your instance name
+$DestinationRoot = 'output directory\' # include trailing backslash
+
+
+#this array contains the list of database objects to script.  You can add or remove as needed.
+$DatabaseArray = @("Schemas","Tables","Views","StoredProcedures","users","Synonyms","UserDefinedFunctions","Triggers","Assemblies","UserDefinedDataTypes","UserDefinedTableTypes","UserDefinedTypes","XMLSchemaCollections")
+
 
 
 
@@ -7,7 +24,10 @@ Add-Type -Path 'C:\Program Files\Microsoft SQL Server\110\SDK\Assemblies\Microso
 
 
 function script-object {
+<#
+    This function will script any SQL object passed to it. 
 
+#>
     [CmdletBinding(SupportsShouldProcess=$true)]
     param([parameter(ValueFromPipeline=$true)]$Object,[string]$type,[string]$WorkDir)
     
@@ -50,6 +70,10 @@ function script-object {
 }
 
 Function Consolidate-Files($type,$dir) {
+
+<#
+    In the event that there are multiple items of a type in a directory, this will create a consolidated script of all other scripts. i.e. each table will have a specific TableName.sql file and an __All_Tables.sql file
+#>
     $ConFile = "__All_$type.sql"
     $ConDir = "$dir\$ConFile"
 
@@ -65,7 +89,6 @@ Function Consolidate-Files($type,$dir) {
     } #end single alert file
 }
 
-$DatabaseArray = @("Schemas","Tables","Views","StoredProcedures","Synonyms","UserDefinedFunctions","Triggers","Assemblies","UserDefinedDataTypes","UserDefinedTableTypes","UserDefinedTypes","XMLSchemaCollections")
 
 
         
