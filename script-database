@@ -1,0 +1,126 @@
+$InstanceName = 'instancename'
+$DestinationRoot = 'outputdirectory' # include trailing backslash
+
+
+
+Add-Type -Path 'C:\Program Files\Microsoft SQL Server\110\SDK\Assemblies\Microsoft.SqlServer.Smo.dll'
+
+
+function script-object {
+
+    [CmdletBinding(SupportsShouldProcess=$true)]
+    param([parameter(ValueFromPipeline=$true)]$Object,[string]$type,[string]$WorkDir)
+    
+    
+    process{
+        $ChangeFlag = 0
+        $Dir = $WorkDir + "\$Type" 
+       
+        $Object.$Type | Where-Object -filterscript {$_.PSObject.Properties.Match('isSystemObject').Count -eq 0 -or $_.isSystemObject -eq 0} |
+        ForEach-Object {
+            if(!(Test-Path -Path $Dir)){
+                New-Item $Dir -ItemType directory 
+            }
+            $Name = $_.name -replace '\\',"`$"
+            $File = "$Dir" + "\" + $Name + ".sql"
+            if(!(Test-Path $File)){
+                $Scriptor.Options.FileName = $File
+                $Scriptor.EnumScript($_)
+                (Get-Content $File | Select-Object -Skip 1) | Set-Content $File
+                $ChangeFlag = 1
+            }Else{
+                $TmpFile = "$File.TMP"
+                $Scriptor.Options.FileName = $TmpFile
+                $Scriptor.EnumScript($_)
+                (Get-Content $TmpFile | Select-Object -Skip 1) | Set-Content $TmpFile
+                $FileHash = Get-Hash $File
+                $TMPHash = Get-Hash $TmpFile
+                if(Compare-Object $FileHash $TMPHash){
+                    Remove-Item $File
+                    Rename-Item $TmpFile $File
+                    $ChangeFlag = 1
+                }else{
+                    Remove-Item $TmpFile
+                }
+                
+            }
+        } #Tables
+        Return $ChangeFlag
+    }
+}
+
+Function Consolidate-Files($type,$dir) {
+    $ConFile = "__All_$type.sql"
+    $ConDir = "$dir\$ConFile"
+
+    #Generate single File
+    if(!(Test-Path -Path $ConDir)){
+            New-Item $ConDir -ItemType file
+    }
+    
+    Get-ChildItem $dir | where-object -FilterScript {$_.Name -ne $ConFile} |
+    ForEach-Object {
+        $CurrentFile = "$dir\$_"
+        Get-Content $CurrentFile | Add-Content $ConDir
+    } #end single alert file
+}
+
+$DatabaseArray = @("Schemas","Tables","Views","StoredProcedures","Synonyms","UserDefinedFunctions","Triggers","Assemblies","UserDefinedDataTypes","UserDefinedTableTypes","UserDefinedTypes","XMLSchemaCollections")
+
+
+        
+        
+
+        # new instance object -  Initialize the instance
+        $InstanceObject = New-Object ('Microsoft.SqlServer.Management.Smo.Server') -argumentlist $InstanceName
+        $Scriptor = New-Object ('Microsoft.SqlServer.Management.Smo.Scripter') $InstanceName
+
+        $Scriptor.Options.DriAllConstraints = $true; 
+        $Scriptor.Options.DriAllKeys        = $true; 
+        $Scriptor.Options.DriClustered      = $true; 
+        $Scriptor.Options.DriDefaults       = $true; 
+        $Scriptor.Options.DriIndexes        = $true; 
+        $Scriptor.Options.DriNonClustered   = $true; 
+        $Scriptor.Options.DriPrimaryKey     = $true; 
+        $Scriptor.Options.DriUniqueKeys     = $true; 
+ 
+        $Scriptor.Options.AnsiFile          = $true; 
+        $Scriptor.Options.ClusteredIndexes  = $true; 
+        $Scriptor.Options.IncludeHeaders    = $true; 
+        $Scriptor.Options.Indexes           = $true; 
+        $Scriptor.Options.SchemaQualify     = $true; 
+        $Scriptor.Options.Triggers          = $true; 
+        $Scriptor.Options.XmlIndexes        = $true; 
+
+        #Create WorkDir, check for existance and create if not 
+        $WorkDir = $DestinationRoot + $InstanceName
+        if(!(Test-Path -Path $WorkDir)){
+            New-Item $WorkDir -ItemType directory 
+        }
+
+
+
+
+
+
+$InstanceObject.Databases | where-object -FilterScript {$_.Name -ne 'tempdb'} |
+        ForEach-Object{
+            $CurrentDatabase = $_
+            $DatabaseName = $CurrentDatabase.Name
+  
+            #Check For existence of database subfolder
+            $DBWorkDir = $DestinationRoot + $InstanceName + "\Databases\" + $DatabaseName
+            if(!(Test-Path -Path $DBWorkDir)){
+                New-Item $DBWorkDir -ItemType directory 
+            }  
+
+            #Script Database
+            $CurrentDatabase.Script() | out-file "$DBWorkDir\$DatabaseName.sql"
+
+            ForEach ($Item in $DatabaseArray){
+               $retval = script-object $CurrentDatabase $Item $DBWorkDir
+                if((test-path "$DBWorkDir\$item") -and $retval -eq 1){
+                   Consolidate-Files $item "$DBWorkDir\$item"
+                }
+            }
+        }
